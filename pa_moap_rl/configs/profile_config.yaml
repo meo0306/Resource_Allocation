@@ -1,0 +1,27 @@
+# Configurable PA-MOAP preference profiles and objective weights.
+# Defaults are neutral first-version values and can be replaced by scenario-specific settings.
+
+student_profile: [0.60, 0.50, 0.40, 0.70, 0.80, 0.50]
+teacher_profile: [0.50, 0.50, 0.60, 0.50, 0.50, 0.80]
+
+# Shape = [M], order follows method_config.yaml:methods.
+target_distribution:
+  - 0.090909091
+  - 0.090909091
+  - 0.090909091
+  - 0.090909091
+  - 0.090909091
+  - 0.090909091
+  - 0.090909091
+  - 0.090909091
+  - 0.090909091
+  - 0.090909091
+  - 0.090909090
+
+# J = w_E F_E + w_S F_S + w_T F_T + w_G F_G - w_soft V_soft.
+weights:
+  effect: 0.30
+  student: 0.25
+  teacher: 0.25
+  global: 0.10
+  soft: 0.10

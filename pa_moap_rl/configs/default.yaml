@@ -1,0 +1,41 @@
+# Default PA-MOAP runtime parameters.
+
+config_files:
+  method: method_config.yaml
+  profile: profile_config.yaml
+
+preference:
+  lambda_q: 0.60
+  lambda_r: 0.40
+  alpha_student: 0.75
+  alpha_teacher: 0.75
+  activity_weights: [0.20, 0.20, 0.20, 0.20, 0.20]
+
+soft_constraints:
+  entropy_min: 0.55
+  method_cap: 0.35
+  lambda_div: 1.00
+  lambda_cap: 1.00
+  epsilon: 1.0e-8
+
+environment:
+  max_steps: 128
+  patience: 32
+  improvement_eps: 1.0e-12
+
+model:
+  hidden_dim: 64
+  category_embedding_dim: 8
+  method_embedding_dim: 8
+
+ppo:
+  rollout_steps: 128
+  update_epochs: 4
+  minibatch_size: 64
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.20
+  value_coef: 0.50
+  entropy_coef: 0.01
+  learning_rate: 3.0e-4
+  max_grad_norm: 0.50

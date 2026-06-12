@@ -1,0 +1,7 @@
+python -m compileall pa_moap_rl
+pytest -q
+python -m pa_moap_rl.experiments.train_ppo --smoke-test
+python -m pa_moap_rl.experiments.train_ppo_batch --smoke-test
+python -m pa_moap_rl.experiments.run_batch --smoke-test
+python -m pa_moap_rl.experiments.run_ablation --smoke-test
+python -m pa_moap_rl.experiments.analyze_results --input results/smoke.csv
