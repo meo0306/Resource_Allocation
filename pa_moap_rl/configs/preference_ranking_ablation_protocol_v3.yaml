@@ -1,0 +1,190 @@
+schema_version: 1
+protocol_id: four_topology_b075_pure_ppo_preference_ranking_ablation_v1
+status: user_confirmed
+parameter_status: confirmed_for_D_E_ablation_not_global_PPO_freeze
+
+versions:
+  problem_formulation_version: single_replacement_masked_mdp_v1
+  training_integration_version: formal_training_counterfactual_ranking_v2
+  auxiliary_loss_integration_version: ppo_auxiliary_loss_callback_v1
+  checkpoint_payload_version: 3
+  experiment_spec_schema_version: 2
+  scenario_schema_version: 2
+  sequence_runner_version: preference_ranking_ablation_sequence_v1
+
+objective:
+  config: pa_moap_rl/configs/objective_frozen_four_topology_v2.yaml
+  objective_id: main_no_reference__h0.65__c0.35__be1.00__bc1.00
+  config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+
+read_only_baseline:
+  protocol: pa_moap_rl/configs/preference_repair_ablation_protocol_v2.yaml
+  results_root: results/four_topology_b075_pure_ppo_ablation_v1
+  comparison_arm: C
+  checkpoint: results/four_topology_b075_pure_ppo_ablation_v1/C__paired_counterfactual_v1__objective_delta_symmetric_v2/checkpoints/best.pt
+  expected_update: 90
+  checkpoint_sha256: 5a4cfeb31a49d0e5163fd47e2d1fb942c3f4efe01a4eaae733ff00a389682641
+
+immutable_baseline_artifacts:
+  - path: pa_moap_rl/configs/preference_repair_ablation_protocol_v2.yaml
+    sha256: 5f5da34a335fa1ffc8eea642804eba3d5bcd1947cefa1547a9d7e466adf035f6
+  - path: pa_moap_rl/experiments/paired_preference_sampling_v2.py
+    sha256: faae1182ca7c40c5c21a8dc7c774645417800bbd2b26b77f6eda77ce7e637329
+  - path: pa_moap_rl/models/preference_repair_v2.py
+    sha256: 69183e475f0f1a81ea03a2182eb7e2b0f17ce04ea51cce85444a1938533fd37d
+  - path: pa_moap_rl/experiments/run_preference_repair_ablation_v2.py
+    sha256: 7d559a88d3f0f18c4643ebdbb7b6cacf4a2aaae43a705775d4e627c5adb642c0
+  - path: results/four_topology_b075_pure_ppo_ablation_v1/A__paired_counterfactual_v1__legacy_separate_v1/checkpoints/best.pt
+    sha256: 61fc0542e34e73d8a376713de57adbedb7b7290ebf77445e07e22d31d565afa6
+  - path: results/four_topology_b075_pure_ppo_ablation_v1/B__independent_random_v1__objective_delta_symmetric_v2/checkpoints/best.pt
+    sha256: 357837db0206bcff68b59d52ce4c32106df36cb444de2cc3b8ed2220bd834425
+  - path: results/four_topology_b075_pure_ppo_ablation_v1/C__paired_counterfactual_v1__objective_delta_symmetric_v2/checkpoints/best.pt
+    sha256: 5a4cfeb31a49d0e5163fd47e2d1fb942c3f4efe01a4eaae733ff00a389682641
+  - path: results/four_topology_b075_pure_ppo_ablation_v1/controlled_cross_evaluation_v1/ablation_evaluation_summary.json
+    sha256: 0ac69528cb286d63a272ac191c393130cdf46cc699d9a44d48d97f7fe72ff609
+  - path: results/four_topology_b075_pure_ppo_ablation_v1/checkpoint_teacher_trajectory_audit_v1/audit_summary.json
+    sha256: d200dc36c82cad4bd57021d623dcc6abaeca1212d813a9920a9b68d503e279e9
+
+pre_extension_shared_interface_hashes:
+  purpose: provenance_only_files_receive_default_off_extension
+  ppo_solver_sha256: 50d124ad6e9ff1903d141558b3c789b113ea428cc2119a088739c18213882135
+  formal_training_sha256: 8bcec8090ca76719baee04c67470cb1ed1502bc34b67bc7819a8faa0d7939e8d
+
+data:
+  train_manifest: data_processed/four_topology_exploratory_v2/dev_train.csv
+  validation_manifest: data_processed/four_topology_exploratory_v2/dev_calibration.csv
+  validation_scenarios: data_processed/four_topology_exploratory_v2/controlled_scenarios_v2.json
+  validation_pairs: data_processed/four_topology_exploratory_v2/seed0_pilot_validation_pairs_72.csv
+  allow_controlled_held_out_validation: true
+  data_audit: data_processed/four_topology_exploratory_v2/data_audit.json
+
+common_run:
+  seed: 0
+  device: cuda
+  deterministic: true
+  rollout_mode: joint
+  total_updates: 100
+  instances_per_update: 4
+  rollout_steps: 128
+  minibatch_size: 64
+  update_epochs: 4
+  learning_rate: 1.0e-4
+  entropy_coef: 0.01
+  target_kl: 0.03
+  hidden_dim: 64
+  env_max_steps: 128
+  env_patience: 32
+  eval_env_max_steps: 512
+  eval_env_patience: 32
+  evaluate_at_start: true
+  eval_interval: 10
+  checkpoint_interval: 10
+
+arms:
+  D:
+    purpose: paired_symmetric_plus_exact_delta_ranking
+    sampler_version: paired_counterfactual_v1
+    model_version: objective_delta_symmetric_v2
+    feature_version: objective_consistent_symmetric_features_v1
+    network_architecture_version: masked_actor_critic_exchange_invariant_v1
+    auxiliary_supervision:
+      ranking_version: exact_delta_listwise_rank_v1
+      ranking_weight: 0.30
+      target_temperature: 0.0025
+      contrast_version: none
+      contrast_weight: 0.0
+      include_student_direction: true
+      include_teacher_direction: true
+    output_dir: results/four_topology_b075_pure_ppo_ranking_ablation_v1/D__exact_delta_listwise_rank_v1
+  E:
+    purpose: D_plus_same_state_counterfactual_logit_alignment
+    sampler_version: paired_counterfactual_v1
+    model_version: objective_delta_symmetric_v2
+    feature_version: objective_consistent_symmetric_features_v1
+    network_architecture_version: masked_actor_critic_exchange_invariant_v1
+    auxiliary_supervision:
+      ranking_version: exact_delta_listwise_rank_v1
+      ranking_weight: 0.30
+      target_temperature: 0.0025
+      contrast_version: same_state_counterfactual_logit_alignment_v1
+      contrast_weight: 3.0
+      include_student_direction: true
+      include_teacher_direction: true
+    output_dir: results/four_topology_b075_pure_ppo_ranking_ablation_v1/E__rank_plus_counterfactual_alignment_v1
+
+execution:
+  train_from_scratch: true
+  arm_order: [D, E]
+  no_old_artifact_writes: true
+  fail_if_output_nonempty_without_exact_resume: true
+  no_problem_formulation_change: true
+  no_model_or_feature_change_from_arm_C: true
+  no_local_search_or_hybrid_postprocessing: true
+  training_locked_until_status: user_confirmed
+
+preflight_gates:
+  exact_delta_label_error_max: 5.0e-7
+  finite_forward_and_backward_required: true
+  both_actor_directions_required_for_E: true
+  legacy_default_path_regression_required: true
+  immutable_baseline_hashes_required: true
+  ranking_to_base_gradient_ratio_range: [0.03, 0.15]
+  contrast_to_base_gradient_ratio_range_for_E: [0.005, 0.05]
+  auxiliary_to_base_gradient_ratio_max: 0.20
+
+preflight:
+  rollout_steps: 4
+  device: cpu
+  optimizer_step_executed: false
+  files_written: false
+
+checkpoint_selection:
+  evaluation_set: fixed_72_pair_dev_calibration
+  primary: maximize_mean_total_score
+  tiebreak: minimize_p90_exact_relative_gap
+  final_tiebreak: earliest_update
+  numerical_tolerance: 1.0e-12
+
+post_training_evaluation:
+  controlled_cross_pairs: 288
+  inference_env_max_steps: 512
+  inference_env_patience: 32
+  response_profiles: [S6-T6, S4-T6, S6-T4, S1-T4]
+  checkpoint_trajectory_audit_if_selected_arm_fails: true
+  cluster_bootstrap_unit: source_family_id
+  bootstrap_confidence: 0.95
+
+acceptance_gates:
+  status: user_confirmed_for_D_E_ablation
+  engineering:
+    feasible_rate: 1.0
+    illegal_action_count: 0
+    max_score_recomputation_error: 1.0e-9
+    exact_experiment_spec_match_on_restore: true
+    immutable_A_B_C_artifacts_unchanged: true
+  mechanism:
+    min_teacher_endpoint_policy_positive_action_rate: 0.50
+    max_teacher_best_action_median_policy_rank: 10
+    require_profitable_balanced_teacher_trajectory_divergence: true
+  fixed_72_quality:
+    max_mean_exact_relative_gap: 0.00525
+    max_p90_exact_relative_gap: 0.01020
+  pure_ppo_response:
+    min_teacher_only_positive_gain_rate: 0.50
+    min_teacher_only_mean_reoptimization_gain: 0.000055
+    require_teacher_only_cluster_bootstrap_lower_bound_above_zero: true
+    min_student_only_positive_gain_rate: 0.54
+    min_conflict_positive_gain_rate: 0.89
+  selection_among_eligible_arms:
+    primary: maximize_teacher_only_mean_reoptimization_gain
+    tiebreak_1: maximize_fixed_72_mean_total_score
+    tiebreak_2: minimize_fixed_72_p90_exact_relative_gap
+    tiebreak_3: prefer_lower_complexity_D_then_E
+  interpretation: development_gate_not_independent_confirmation_and_not_teaching_quality_threshold
+
+loss_parameter_note:
+  ranking_weight: user_confirmed_for_D_E_ablation
+  contrast_weight: user_confirmed_for_D_E_ablation
+  target_temperature: user_confirmed_for_D_E_ablation
+  training_authorized_by_user: true
+  global_PPO_and_inference_settings_frozen: false

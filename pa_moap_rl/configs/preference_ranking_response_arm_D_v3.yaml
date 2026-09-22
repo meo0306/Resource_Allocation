@@ -1,0 +1,21 @@
+schema_version: 1
+diagnostic_id: four_topology_b075_preference_ranking_arm_D_controlled_cross_v1
+status: ablation_controlled_cross_confirmed
+preference_response_config: pa_moap_rl/configs/preference_response_four_topology_v2.yaml
+checkpoint:
+  arm_id: D
+  path: results/four_topology_b075_pure_ppo_ranking_ablation_v1/D__exact_delta_listwise_rank_v1/checkpoints/best.pt
+  run_metadata: results/four_topology_b075_pure_ppo_ranking_ablation_v1/D__exact_delta_listwise_rank_v1/run_metadata.json
+  expected_update: 90
+  checkpoint_sha256: cbde752d982ccc1250752ee35d007c026ce430f526f48150e802b1deae8e5cce
+inference:
+  max_steps: 512
+  patience: 32
+  deterministic: true
+  device: cuda
+interpretation:
+  pure_ppo_only: true
+  parameters_frozen: false
+run:
+  output_dir: results/four_topology_b075_pure_ppo_ranking_ablation_v1/controlled_cross_evaluation_v1/arm_D
+  resume: true

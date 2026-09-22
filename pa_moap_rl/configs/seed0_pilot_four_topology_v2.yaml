@@ -1,0 +1,42 @@
+schema_version: 1
+pilot_id: four_topology_b075_seed0_pilot_v1
+status: user_confirmed
+
+objective:
+  config: pa_moap_rl/configs/objective_frozen_four_topology_v2.yaml
+  config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+
+data:
+  train_manifest: data_processed/four_topology_exploratory_v2/dev_train.csv
+  validation_manifest: data_processed/four_topology_exploratory_v2/dev_calibration.csv
+  validation_scenarios: data_processed/four_topology_exploratory_v2/controlled_scenarios_v2.json
+  validation_pairs: data_processed/four_topology_exploratory_v2/seed0_pilot_validation_pairs_72.csv
+  allow_controlled_held_out_validation: true
+  data_audit: data_processed/four_topology_exploratory_v2/data_audit.json
+
+run:
+  output_dir: results/four_topology_b075_seed0_pilot_v1_run02
+  seed: 0
+  device: cuda
+  deterministic: true
+  rollout_mode: joint
+  total_updates: 100
+  instances_per_update: 4
+  rollout_steps: 128
+  minibatch_size: 64
+  update_epochs: 4
+  learning_rate: 3.0e-4
+  entropy_coef: 0.01
+  target_kl: null
+  hidden_dim: 64
+  env_max_steps: 128
+  env_patience: 32
+  evaluate_at_start: true
+  eval_interval: 10
+  checkpoint_interval: 10
+
+interpretation:
+  ppo_parameters_frozen: false
+  research_stage: exploratory_seed0_pilot
+  validation_model_selection: mean_total_score_then_p90_exact_gap_tiebreak
+  no_absolute_teaching_quality_gate: true

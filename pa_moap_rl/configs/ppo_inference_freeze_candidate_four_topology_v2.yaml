@@ -1,0 +1,94 @@
+schema_version: 1
+freeze_record_id: four_topology_b075_ppo_inference_freeze_candidate_v1
+status: awaiting_user_decision_not_frozen
+
+objective:
+  config: pa_moap_rl/configs/objective_frozen_four_topology_v2.yaml
+  config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+
+training_candidate:
+  learning_rate: 1.0e-4
+  target_kl: 0.03
+  rollout_mode: joint
+  rollout_steps: 128
+  instances_per_update: 4
+  update_epochs: 4
+  minibatch_size: 64
+  entropy_coef: 0.01
+  hidden_dim: 64
+  total_updates: 100
+  env_max_steps: 128
+  env_patience: 32
+  deterministic: true
+  evaluate_at_start: true
+  eval_interval: 10
+  checkpoint_interval: 10
+
+evaluation_and_inference_candidate:
+  env_max_steps: 512
+  env_patience: 32
+  deterministic: true
+  action_selection: masked_argmax
+  initial_assignment: effect_greedy
+  return_rule: best_feasible_so_far
+  training_environment_is_separate: true
+
+checkpoint_selection_candidate:
+  evaluation_set: fixed_72_pair_dev_calibration
+  evaluation_budget:
+    env_max_steps: 512
+    env_patience: 32
+  primary: maximize_mean_total_score
+  tiebreak: minimize_p90_exact_relative_gap
+  final_tiebreak: earliest_update
+  numerical_tolerance: 1.0e-12
+  select_independently_for_each_seed: true
+  retain:
+    - numbered_checkpoints
+    - best_checkpoint
+    - latest_checkpoint
+
+computational_gap_reporting:
+  levels:
+    - 0.01
+    - 0.02
+    - 0.03
+    - 0.05
+  interpretation: reporting_levels_only_not_teaching_quality_thresholds
+
+seed0_diagnostic_checkpoint:
+  update: 60
+  sha256: f3bc64e0a33d990c6612fbc9a3f33b48e29654dbf284ddb0e4b3a6640fed13df
+  role: diagnostic_evidence_only_not_a_universal_frozen_checkpoint
+
+freeze_decision:
+  recommended_action: reopen_teacher_response_training_diagnosis_before_freeze
+  training_parameters_frozen: false
+  inference_parameters_frozen: false
+  blocking_finding: teacher_only_zero_response_after_checkpoint_and_budget_reevaluation
+  user_confirmation_required: true
+  no_legacy_1500_update_gate: true
+  no_legacy_absolute_score_gate: true
+
+evidence:
+  source_run_config:
+    path: pa_moap_rl/configs/seed0_pilot_four_topology_v2_stabilization_run03.yaml
+    sha256: fa79faa83f11a5f7bab3ee3bd636f73d5d350e878f5be5487d3648f5f4975189
+  search_budget_config:
+    path: pa_moap_rl/configs/search_budget_diagnostic_four_topology_v2.yaml
+    sha256: aab61f3cce5fa983ad64b914dee837deaaf6000e8b72e392d3be7eeb86f61bfc
+  search_budget_summary:
+    path: results/four_topology_b075_search_budget_diagnostic_v1/search_budget_summary.json
+    sha256: 41a66fad9c5dea817e6ff7a7ef0d50ca179b3ba7ad53bc265a74e00c4edac849
+  checkpoint_reevaluation:
+    path: results/four_topology_b075_ppo_freeze_decision_v1/checkpoint_reevaluation_512_32/checkpoint_selection_diagnostic.json
+    sha256: 72bacafb7facc2727a342aaa6ba7b5c4fd3edddcf8fc9f8f6a1ad41e13a18fce
+  update60_response:
+    path: results/four_topology_b075_ppo_freeze_decision_v1/update60_response_512_32/candidate_response_summary.json
+    sha256: c94d9d229b40d9182a14d5bf812ad51383243aebc99f6b7689d08f20634d5530
+  data_audit:
+    path: data_processed/four_topology_exploratory_v2/data_audit.json
+    sha256: d252e10b36139c1561a2da634f736ecac51e186bd0c49e67597f22756214f495
+  code_revision:
+    git_head: 55861624b8d6a4f17f3f1f5eb9888321efddfd80
+    working_tree_clean: false

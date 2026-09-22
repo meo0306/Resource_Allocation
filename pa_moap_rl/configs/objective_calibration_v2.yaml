@@ -1,0 +1,49 @@
+schema_version: 2
+catalogue_id: four_topology_objective_calibration_v2
+
+defaults:
+  schema_version: 2
+  entropy_min: 0.55
+  method_cap: 0.35
+  beta_entropy: 0.0
+  beta_cap: 0.0
+  epsilon: 1.0e-8
+  target_distribution: &legacy_rho
+    [0.18, 0.12, 0.10, 0.10, 0.10, 0.08, 0.08, 0.08, 0.05, 0.05, 0.06]
+
+candidates:
+  - objective_id: historical_equivalent_anchor
+    schema_version: 2
+    alpha_effect: 0.3333333333333333
+    alpha_preference: 0.5555555555555556
+    alpha_global: 0.1111111111111111
+    beta_entropy: 0.1111111111111111
+    beta_cap: 0.1111111111111111
+  - objective_id: weak_reference_unpenalized
+    alpha_effect: 0.35
+    alpha_preference: 0.60
+    alpha_global: 0.05
+  - objective_id: main_no_reference_unpenalized
+    alpha_effect: 0.35
+    alpha_preference: 0.65
+    alpha_global: 0.0
+    target_distribution: null
+  - objective_id: preference_emphasis_reference
+    alpha_effect: 0.30
+    alpha_preference: 0.65
+    alpha_global: 0.05
+
+scan:
+  structures:
+    - {name: main_no_reference, alpha_effect: 0.35, alpha_preference: 0.65, alpha_global: 0.0}
+    - {name: weak_reference, alpha_effect: 0.35, alpha_preference: 0.60, alpha_global: 0.05}
+  entropy_min: [0.45, 0.55, 0.65]
+  method_cap: [0.25, 0.35, 0.45]
+  penalty_pairs:
+    - [0.03, 0.03]
+    - [0.10, 0.10]
+    - [0.30, 0.30]
+    - [1.00, 1.00]
+    - [0.10, 0.30]
+    - [0.30, 0.10]
+  include_unpenalized_per_structure: true

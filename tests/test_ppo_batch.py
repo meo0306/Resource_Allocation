@@ -4,7 +4,35 @@ from pathlib import Path
 
 import pandas as pd
 
-from pa_moap_rl.experiments.train_ppo_batch import run_shared_batch_training
+from pa_moap_rl.experiments.train_ppo_batch import (
+    _replace_with_retry,
+    run_shared_batch_training,
+)
+
+
+def test_csv_replace_retries_short_windows_reader_lock(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    temporary = tmp_path / 'metrics.csv.tmp'
+    output = tmp_path / 'metrics.csv'
+    temporary.write_text('new', encoding='utf-8')
+    output.write_text('old', encoding='utf-8')
+    real_replace = Path.replace
+    attempts = 0
+
+    def flaky_replace(path: Path, target: Path) -> Path:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise PermissionError('reader still owns the target')
+        return real_replace(path, target)
+
+    monkeypatch.setattr(Path, 'replace', flaky_replace)
+    _replace_with_retry(temporary, output, attempts=3, delay_seconds=0.0)
+
+    assert attempts == 3
+    assert output.read_text(encoding='utf-8') == 'new'
 
 
 def test_shared_batch_training_smoke_writes_outputs(tmp_path: Path) -> None:

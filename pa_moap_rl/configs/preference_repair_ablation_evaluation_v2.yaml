@@ -1,0 +1,54 @@
+schema_version: 1
+evaluation_id: four_topology_b075_pure_ppo_preference_repair_controlled_cross_v1
+status: protocol_confirmed_post_training_evaluation
+evaluator_version: versioned_pure_ppo_controlled_cross_v1
+
+protocol:
+  path: pa_moap_rl/configs/preference_repair_ablation_protocol_v2.yaml
+  sha256: 5f5da34a335fa1ffc8eea642804eba3d5bcd1947cefa1547a9d7e466adf035f6
+
+objective:
+  config: pa_moap_rl/configs/objective_frozen_four_topology_v2.yaml
+  config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+
+data:
+  core_manifest: data_processed/four_topology_exploratory_v2/calibration_core_72.csv
+  pair_manifest: data_processed/four_topology_exploratory_v2/controlled_pairs_288.csv
+  scenario_bank: data_processed/four_topology_exploratory_v2/controlled_scenarios_v2.json
+  exact_result_dir: results/objective_calibration_four_topology_v2/controlled_cross/instances/b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+  exact_hash_manifest: results/objective_calibration_four_topology_v2/output_hashes.csv
+  access_status: controlled_calibration
+
+arms:
+  A:
+    run_dir: results/four_topology_b075_pure_ppo_ablation_v1/A__paired_counterfactual_v1__legacy_separate_v1
+    checkpoint: results/four_topology_b075_pure_ppo_ablation_v1/A__paired_counterfactual_v1__legacy_separate_v1/checkpoints/best.pt
+    expected_update: 50
+    checkpoint_sha256: 61fc0542e34e73d8a376713de57adbedb7b7290ebf77445e07e22d31d565afa6
+  B:
+    run_dir: results/four_topology_b075_pure_ppo_ablation_v1/B__independent_random_v1__objective_delta_symmetric_v2
+    checkpoint: results/four_topology_b075_pure_ppo_ablation_v1/B__independent_random_v1__objective_delta_symmetric_v2/checkpoints/best.pt
+    expected_update: 30
+    checkpoint_sha256: 357837db0206bcff68b59d52ce4c32106df36cb444de2cc3b8ed2220bd834425
+  C:
+    run_dir: results/four_topology_b075_pure_ppo_ablation_v1/C__paired_counterfactual_v1__objective_delta_symmetric_v2
+    checkpoint: results/four_topology_b075_pure_ppo_ablation_v1/C__paired_counterfactual_v1__objective_delta_symmetric_v2/checkpoints/best.pt
+    expected_update: 90
+    checkpoint_sha256: 5a4cfeb31a49d0e5163fd47e2d1fb942c3f4efe01a4eaae733ff00a389682641
+
+inference:
+  device: cuda
+  deterministic: true
+  max_steps: 512
+  patience: 32
+
+bootstrap:
+  seed: 20260918
+  repetitions: 10000
+  cluster: source_family_id
+  confidence: 0.95
+
+run:
+  output_dir: results/four_topology_b075_pure_ppo_ablation_v1/controlled_cross_evaluation_v1
+  resume: true
+  pure_ppo_only: true

@@ -1,23 +1,27 @@
 # Configurable PA-MOAP preference profiles and objective weights.
 # Defaults are neutral first-version values and can be replaced by scenario-specific settings.
 
+#
+# 前五维表示主体对教学活动形式的偏好或能力倾向，第六维表示主体对认知负荷或组织复杂度的承受能力
 student_profile: [0.60, 0.50, 0.40, 0.70, 0.80, 0.50]
 teacher_profile: [0.50, 0.50, 0.60, 0.50, 0.50, 0.80]
 
 # Shape = [M], order follows method_config.yaml:methods.
+# 第一版正式实验使用的非均匀学校规则场景。
 target_distribution:
-  - 0.090909091
-  - 0.090909091
-  - 0.090909091
-  - 0.090909091
-  - 0.090909091
-  - 0.090909091
-  - 0.090909091
-  - 0.090909091
-  - 0.090909091
-  - 0.090909091
-  - 0.090909090
+  - 0.18
+  - 0.12
+  - 0.10
+  - 0.10
+  - 0.10
+  - 0.08
+  - 0.08
+  - 0.08
+  - 0.05
+  - 0.05
+  - 0.06
 
+# 目标函数各部分权重
 # J = w_E F_E + w_S F_S + w_T F_T + w_G F_G - w_soft V_soft.
 weights:
   effect: 0.30

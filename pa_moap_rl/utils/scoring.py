@@ -13,6 +13,8 @@ from typing import Any
 
 import numpy as np
 
+from pa_moap_rl.objective import ObjectiveSpec
+
 
 DEFAULT_ENTROPY_MIN = 0.55
 DEFAULT_METHOD_CAP = 0.35
@@ -35,6 +37,14 @@ class ScoreBreakdown:
     cap_violation: float
     soft_penalty: float
     method_distribution: np.ndarray
+    effect_contribution: float
+    student_contribution: float
+    teacher_contribution: float
+    global_contribution: float
+    entropy_penalty_contribution: float
+    cap_penalty_contribution: float
+    objective_id: str
+    objective_hash: str
 
     def as_dict(self) -> dict[str, Any]:
         """返回适合写入 JSON/CSV 的评分分解。"""
@@ -50,6 +60,14 @@ class ScoreBreakdown:
             "cap_violation": self.cap_violation,
             "soft_penalty": self.soft_penalty,
             "method_distribution": self.method_distribution.tolist(),
+            'effect_contribution': self.effect_contribution,
+            'student_contribution': self.student_contribution,
+            'teacher_contribution': self.teacher_contribution,
+            'global_contribution': self.global_contribution,
+            'entropy_penalty_contribution': self.entropy_penalty_contribution,
+            'cap_penalty_contribution': self.cap_penalty_contribution,
+            'objective_id': self.objective_id,
+            'objective_hash': self.objective_hash,
         }
 
 
@@ -251,8 +269,21 @@ def score_assignment(
     lambda_div: float = DEFAULT_LAMBDA_DIV,
     lambda_cap: float = DEFAULT_LAMBDA_CAP,
     epsilon: float = DEFAULT_EPSILON,
+    objective: ObjectiveSpec | None = None,
 ) -> ScoreBreakdown:
     """计算一个 assignment 的所有 PA-MOAP 目标分项。"""
+
+    if objective is not None and (
+        float(H_min) != DEFAULT_ENTROPY_MIN
+        or np.asarray(pi_cap).ndim != 0
+        or float(np.asarray(pi_cap)) != DEFAULT_METHOD_CAP
+        or float(lambda_div) != DEFAULT_LAMBDA_DIV
+        or float(lambda_cap) != DEFAULT_LAMBDA_CAP
+        or float(epsilon) != DEFAULT_EPSILON
+    ):
+        raise ValueError(
+            "Do not combine ObjectiveSpec with external threshold or penalty overrides."
+        )
 
     if instance is not None:
         # 常规调用直接传 AssignmentInstance，避免在 solver 中反复拆矩阵参数。
@@ -262,15 +293,18 @@ def score_assignment(
         target_distribution = instance.target_distribution
         weights = instance.weights
 
+    required_inputs = [
+        ("effect_matrix", effect_matrix),
+        ("student_pref", student_pref),
+        ("teacher_pref", teacher_pref),
+    ]
+    if objective is None:
+        required_inputs.extend(
+            [("target_distribution", target_distribution), ("weights", weights)]
+        )
     missing = [
         name
-        for name, value in (
-            ("effect_matrix", effect_matrix),
-            ("student_pref", student_pref),
-            ("teacher_pref", teacher_pref),
-            ("target_distribution", target_distribution),
-            ("weights", weights),
-        )
+        for name, value in required_inputs
         if value is None
     ]
     if missing:
@@ -282,6 +316,42 @@ def score_assignment(
     effect_score = F_E(values, np.asarray(effect_matrix))
     student_score = F_S(values, np.asarray(student_pref))
     teacher_score = F_T(values, np.asarray(teacher_pref))
+    if objective is not None:
+        if objective.target_distribution is not None:
+            if len(objective.target_distribution) != method_count:
+                raise ValueError('Objective target_distribution length does not match method count.')
+            global_score = F_G(values, objective.target_distribution, method_count)
+        else:
+            global_score = 0.0
+        entropy = H(pi, epsilon=objective.epsilon)
+        diversity_violation = V_div(pi, H_min=objective.entropy_min, epsilon=objective.epsilon)
+        cap_violation = V_cap(pi, pi_cap=objective.method_cap)
+        entropy_penalty = float(objective.beta_entropy) * diversity_violation
+        cap_penalty = float(objective.beta_cap) * cap_violation
+        effect_contribution = float(objective.alpha_effect) * effect_score
+        student_contribution = objective.alpha_student * student_score
+        teacher_contribution = objective.alpha_teacher * teacher_score
+        global_contribution = float(objective.alpha_global) * global_score
+        return ScoreBreakdown(
+            total_score=effect_contribution + student_contribution + teacher_contribution + global_contribution - entropy_penalty - cap_penalty,
+            effect_score=effect_score,
+            student_pref_score=student_score,
+            teacher_pref_score=teacher_score,
+            global_score=global_score,
+            entropy=entropy,
+            diversity_violation=diversity_violation,
+            cap_violation=cap_violation,
+            soft_penalty=entropy_penalty + cap_penalty,
+            method_distribution=pi,
+            effect_contribution=effect_contribution,
+            student_contribution=student_contribution,
+            teacher_contribution=teacher_contribution,
+            global_contribution=global_contribution,
+            entropy_penalty_contribution=entropy_penalty,
+            cap_penalty_contribution=cap_penalty,
+            objective_id=objective.objective_id,
+            objective_hash=objective.config_hash,
+        )
     global_score = F_G(values, np.asarray(target_distribution), method_count)
     entropy = H(pi, epsilon=epsilon)
     diversity_violation = V_div(pi, H_min=H_min, epsilon=epsilon)
@@ -311,6 +381,14 @@ def score_assignment(
         cap_violation=cap_violation,
         soft_penalty=soft_penalty,
         method_distribution=pi,
+        effect_contribution=float(weights['effect']) * effect_score,
+        student_contribution=float(weights['student']) * student_score,
+        teacher_contribution=float(weights['teacher']) * teacher_score,
+        global_contribution=float(weights['global']) * global_score,
+        entropy_penalty_contribution=float(weights['soft']) * float(lambda_div) * diversity_violation,
+        cap_penalty_contribution=float(weights['soft']) * float(lambda_cap) * cap_violation,
+        objective_id='legacy_v1',
+        objective_hash='',
     )
 
 
@@ -347,3 +425,114 @@ def replacement_delta(*args: Any, **kwargs: Any) -> float:
     """`delta_score` 的别名，供局部搜索代码使用。"""
 
     return delta_score(*args, **kwargs)
+
+class IncrementalAssignmentScorer:
+    '''O(M) single-replacement scoring with cached local sums and counts.'''
+
+    def __init__(
+        self,
+        assignment: np.ndarray | list[int],
+        instance: Any,
+        *,
+        H_min: float = DEFAULT_ENTROPY_MIN,
+        pi_cap: float | np.ndarray = DEFAULT_METHOD_CAP,
+        lambda_div: float = DEFAULT_LAMBDA_DIV,
+        lambda_cap: float = DEFAULT_LAMBDA_CAP,
+        epsilon: float = DEFAULT_EPSILON,
+        objective: ObjectiveSpec | None = None,
+    ) -> None:
+        self.assignment = _as_assignment(assignment).copy()
+        self.instance = instance
+        self.H_min = float(H_min)
+        self.pi_cap = pi_cap
+        self.lambda_div = float(lambda_div)
+        self.lambda_cap = float(lambda_cap)
+        self.epsilon = float(epsilon)
+        self.objective = objective
+        self.breakdown = score_assignment(
+            self.assignment,
+            instance=instance,
+            H_min=self.H_min,
+            pi_cap=self.pi_cap,
+            lambda_div=self.lambda_div,
+            lambda_cap=self.lambda_cap,
+            epsilon=self.epsilon,
+            objective=self.objective,
+        )
+
+    @property
+    def score(self) -> float:
+        return self.breakdown.total_score
+
+    def candidate_breakdown(self, node_index: int, new_method: int) -> ScoreBreakdown:
+        i = int(node_index)
+        new = int(new_method)
+        if i < 0 or i >= self.assignment.size:
+            raise IndexError(f'node_index {i} outside assignment length {self.assignment.size}.')
+        if new < 0 or new >= self.instance.m:
+            raise ValueError(f'new_method {new} outside method range.')
+        old = int(self.assignment[i])
+        if old == new:
+            return self.breakdown
+        if self.objective is not None:
+            updated = self.assignment.copy()
+            updated[i] = new
+            return score_assignment(updated, instance=self.instance, objective=self.objective)
+        n = float(self.assignment.size)
+        current = self.breakdown
+        effect = current.effect_score + (
+            float(self.instance.effect_matrix[i, new]) - float(self.instance.effect_matrix[i, old])
+        ) / n
+        student = current.student_pref_score + (
+            float(self.instance.student_pref[i, new]) - float(self.instance.student_pref[i, old])
+        ) / n
+        teacher = current.teacher_pref_score + (
+            float(self.instance.teacher_pref[i, new]) - float(self.instance.teacher_pref[i, old])
+        ) / n
+        distribution = current.method_distribution.copy()
+        distribution[old] -= 1.0 / n
+        distribution[new] += 1.0 / n
+        global_score = float(
+            1.0 - 0.5 * np.sum(np.abs(distribution - self.instance.target_distribution))
+        )
+        entropy = H(distribution, epsilon=self.epsilon)
+        diversity = V_div(distribution, H_min=self.H_min, epsilon=self.epsilon)
+        cap = V_cap(distribution, pi_cap=self.pi_cap)
+        soft = self.lambda_div * diversity + self.lambda_cap * cap
+        weights = self.instance.weights
+        total = (
+            float(weights['effect']) * effect
+            + float(weights['student']) * student
+            + float(weights['teacher']) * teacher
+            + float(weights['global']) * global_score
+            - float(weights['soft']) * soft
+        )
+        return ScoreBreakdown(
+            total_score=float(total),
+            effect_score=float(effect),
+            student_pref_score=float(student),
+            teacher_pref_score=float(teacher),
+            global_score=global_score,
+            entropy=entropy,
+            diversity_violation=diversity,
+            cap_violation=cap,
+            soft_penalty=soft,
+            method_distribution=distribution,
+            effect_contribution=float(weights['effect']) * effect,
+            student_contribution=float(weights['student']) * student,
+            teacher_contribution=float(weights['teacher']) * teacher,
+            global_contribution=float(weights['global']) * global_score,
+            entropy_penalty_contribution=float(weights['soft']) * self.lambda_div * diversity,
+            cap_penalty_contribution=float(weights['soft']) * self.lambda_cap * cap,
+            objective_id='legacy_v1',
+            objective_hash='',
+        )
+
+    def candidate_delta(self, node_index: int, new_method: int) -> float:
+        return self.candidate_breakdown(node_index, new_method).total_score - self.score
+
+    def apply(self, node_index: int, new_method: int) -> float:
+        updated = self.candidate_breakdown(node_index, new_method)
+        self.assignment[int(node_index)] = int(new_method)
+        self.breakdown = updated
+        return updated.total_score

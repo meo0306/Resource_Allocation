@@ -1,0 +1,21 @@
+objective_id: main_no_reference__h0.65__c0.35__be1.00__bc1.00
+schema_version: 2
+status: frozen
+frozen_at_utc: 2026-09-12T13:23:47.4283237Z
+decision_source: explicit_user_confirmation
+
+alpha_effect: 0.35
+alpha_preference: 0.65
+alpha_global: 0.0
+alpha_student: 0.325
+alpha_teacher: 0.325
+
+entropy_min: 0.65
+method_cap: 0.35
+beta_entropy: 1.0
+beta_cap: 1.0
+
+target_distribution: null
+epsilon: 1.0e-8
+
+config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606

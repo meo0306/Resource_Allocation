@@ -197,7 +197,11 @@ def build_assignment_instance_from_selection(
 ) -> AssignmentInstance:
     """根据 `SelectionRecord` 在实例根目录中找到 `.sm` 并构造内容二算例。"""
 
-    sm_path = find_instance_file(instance_root, selection.instance_name)
+    search_root = Path(instance_root)
+    input_topology = (selection.metadata or {}).get('input_topology')
+    if input_topology and (search_root / str(input_topology)).is_dir():
+        search_root = search_root / str(input_topology)
+    sm_path = find_instance_file(search_root, selection.instance_name)
     metadata = {
         "source_csv": selection.source_csv,
         "content_one_metadata": selection.metadata or {},

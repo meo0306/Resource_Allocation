@@ -1,0 +1,38 @@
+schema_version: 1
+diagnostic_id: four_topology_b075_teacher_response_root_cause_v1
+status: user_authorized_no_training
+
+objective:
+  config: pa_moap_rl/configs/objective_frozen_four_topology_v2.yaml
+  config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+
+controlled_protocol:
+  config: pa_moap_rl/configs/preference_response_four_topology_v2.yaml
+  baseline_scenario_id: controlled_balanced
+  shifted_scenarios:
+    student: controlled_student_only
+    teacher: controlled_teacher_only
+
+checkpoint:
+  path: results/four_topology_b075_seed0_pilot_stabilization_run03/checkpoints/update_000060.pt
+  expected_update: 60
+  expected_sha256: f3bc64e0a33d990c6612fbc9a3f33b48e29654dbf284ddb0e4b3a6640fed13df
+
+training_log:
+  path: results/four_topology_b075_seed0_pilot_stabilization_run03/metrics/train_instances.csv
+
+existing_evidence:
+  update60_pairs: results/four_topology_b075_ppo_freeze_decision_v1/update60_response_512_32/pairs
+  update70_method_results: results/four_topology_b075_preference_response_v1/method_results.csv
+  search_budget_summary: results/four_topology_b075_search_budget_diagnostic_v1/search_budget_summary.json
+
+diagnostic:
+  device: cpu
+  local_improvement_tolerance: 1.0e-12
+  max_local_moves: 2000
+  score_recompute_tolerance: 1.0e-9
+  checkpoint_updates: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+  no_training: true
+
+run:
+  output_dir: results/four_topology_b075_teacher_response_diagnostic_v1

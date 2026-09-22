@@ -1,0 +1,24 @@
+schema_version: 1
+diagnostic_id: four_topology_b075_update60_response_512_32_v1
+status: stage6_diagnostic_not_frozen
+
+preference_response_config: pa_moap_rl/configs/preference_response_four_topology_v2.yaml
+
+checkpoint:
+  path: results/four_topology_b075_seed0_pilot_stabilization_run03/checkpoints/update_000060.pt
+  expected_update: 60
+
+inference:
+  max_steps: 512
+  patience: 32
+  deterministic: true
+  device: cuda
+
+interpretation:
+  ppo_parameters_frozen: false
+  inference_parameters_frozen: false
+  compare_with_update70_search_budget_results: true
+
+run:
+  output_dir: results/four_topology_b075_ppo_freeze_decision_v1/update60_response_512_32
+  resume: true

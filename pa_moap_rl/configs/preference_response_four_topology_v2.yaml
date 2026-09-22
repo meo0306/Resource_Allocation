@@ -1,0 +1,43 @@
+schema_version: 1
+experiment_id: four_topology_b075_dual_actor_preference_response_v1
+status: user_confirmed
+
+objective:
+  config: pa_moap_rl/configs/objective_frozen_four_topology_v2.yaml
+  config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+
+data:
+  core_manifest: data_processed/four_topology_exploratory_v2/calibration_core_72.csv
+  pair_manifest: data_processed/four_topology_exploratory_v2/controlled_pairs_288.csv
+  scenario_bank: data_processed/four_topology_exploratory_v2/controlled_scenarios_v2.json
+  exact_result_dir: results/objective_calibration_four_topology_v2/controlled_cross/instances/b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+  exact_hash_manifest: results/objective_calibration_four_topology_v2/output_hashes.csv
+  access_status: controlled_calibration
+
+ppo:
+  checkpoint: results/four_topology_b075_seed0_pilot_stabilization_run03/checkpoints/best.pt
+  run_metadata: results/four_topology_b075_seed0_pilot_stabilization_run03/run_metadata.json
+  output_hash_manifest: results/four_topology_b075_seed0_pilot_stabilization_run03/output_hashes.csv
+  expected_update: 70
+  device: cuda
+  deterministic: true
+
+methods:
+  - gurobi_exact
+  - scalarized_independent_greedy
+  - local_search_best_improvement
+  - ppo_shared_policy
+
+analysis:
+  baseline_scenario_id: controlled_balanced
+  score_tolerance: 1.0e-9
+  positive_gain_tolerance: 1.0e-9
+  report_assignment_change: true
+  assignment_change_is_not_sufficient_evidence: true
+  ppo_parameters_frozen: false
+  teaching_quality_threshold_defined: false
+
+run:
+  output_dir: results/four_topology_b075_preference_response_v1
+  seed: 0
+  resume: true

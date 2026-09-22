@@ -20,12 +20,14 @@ from typing import Any
 import numpy as np
 import torch
 
+from pa_moap_rl.checkpointing import checkpoint_metadata, collection_data_hash, method_matrix_hash
 from pa_moap_rl.configs import PAConfig, load_config
 from pa_moap_rl.data.instance_schema import AssignmentInstance
 from pa_moap_rl.data.loader import load_instance_json
 from pa_moap_rl.envs.method_assignment_env import MethodAssignmentEnv
 from pa_moap_rl.experiments.run_batch import discover_instance_paths
 from pa_moap_rl.models.actor_critic import MaskedActorCritic, unflatten_action
+from pa_moap_rl.objective import ObjectiveSpec, legacy_objective_spec
 from pa_moap_rl.solvers.greedy_solver import effect_only_greedy, scalarized_independent_greedy
 from pa_moap_rl.solvers.local_search_solver import local_search_best_improvement
 from pa_moap_rl.solvers.ppo_solver import (
@@ -54,7 +56,7 @@ class SharedBatchTrainingResult:
     tensorboard_dir: Path | None = None
 
 
-def _write_rows(rows: list[dict[str, Any]], path: str | Path) -> None:
+def _write_rows_legacy(rows: list[dict[str, Any]], path: str | Path) -> None:
     """写出 train/eval CSV，字段集合由所有行共同决定。"""
 
     output = Path(path)
@@ -77,6 +79,54 @@ def _write_rows(rows: list[dict[str, Any]], path: str | Path) -> None:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _replace_with_retry(
+    temporary: Path,
+    output: Path,
+    *,
+    attempts: int = 50,
+    delay_seconds: float = 0.1,
+) -> None:
+    '''Replace output while tolerating short-lived Windows reader locks.'''
+
+    for attempt in range(attempts):
+        try:
+            temporary.replace(output)
+            return
+        except PermissionError:
+            if attempt + 1 == attempts:
+                raise
+            time.sleep(delay_seconds)
+
+
+def _write_rows(rows: list[dict[str, Any]], path: str | Path) -> None:
+    '''Atomically replace a CSV so concurrent readers never see partial data.'''
+
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_suffix(output.suffix + '.tmp')
+    if not rows:
+        temporary.write_text('', encoding='utf-8')
+        _replace_with_retry(temporary, output)
+        return
+    fieldnames = sorted({key for row in rows for key in row})
+    preferred = [
+        'update',
+        'phase',
+        'group',
+        'instance_name',
+        'instance_path',
+        'seed',
+        'solver_name',
+    ]
+    preferred = [field for field in preferred if field in fieldnames]
+    fieldnames = preferred + [field for field in fieldnames if field not in preferred]
+    with temporary.open('w', encoding='utf-8', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    _replace_with_retry(temporary, output)
 
 
 def _create_summary_writer(tensorboard_dir: str | Path | None) -> Any | None:
@@ -148,7 +198,11 @@ def _write_eval_tensorboard_scalars(writer: Any | None, rows: list[dict[str, Any
     writer.flush()
 
 
-def _build_env(project_config: PAConfig, ppo_config: PPOConfig) -> MethodAssignmentEnv:
+def _build_env(
+    project_config: PAConfig,
+    ppo_config: PPOConfig,
+    objective: ObjectiveSpec | None = None,
+) -> MethodAssignmentEnv:
     """根据项目配置和 PPO 覆盖项创建环境。"""
 
     env_cfg = project_config.default["environment"]
@@ -157,6 +211,7 @@ def _build_env(project_config: PAConfig, ppo_config: PPOConfig) -> MethodAssignm
         patience=int(ppo_config.env_patience if ppo_config.env_patience is not None else env_cfg["patience"]),
         improvement_eps=float(env_cfg["improvement_eps"]),
         config=project_config,
+        objective=objective,
     )
 
 
@@ -190,11 +245,12 @@ def _policy_rollout(
     project_config: PAConfig,
     ppo_config: PPOConfig,
     deterministic: bool = True,
+    objective: ObjectiveSpec | None = None,
 ) -> SolverResult:
     """无梯度运行一次 policy episode，并返回环境记录的 best assignment。"""
 
     start = time.perf_counter()
-    env = _build_env(project_config, ppo_config)
+    env = _build_env(project_config, ppo_config, objective)
     obs = env.reset(instance)
     device = next(model.parameters()).device
 
@@ -216,6 +272,7 @@ def _policy_rollout(
         assignment=env.best_assignment,
         runtime=runtime,
         history=[float(env.best_score)],
+        objective=objective,
     )
 
 
@@ -248,16 +305,26 @@ def _result_row(
     return row
 
 
-def _baseline_results(instance: AssignmentInstance, *, seed: int, include_local_search: bool) -> list[SolverResult]:
+def _baseline_results(
+    instance: AssignmentInstance,
+    *,
+    seed: int,
+    include_local_search: bool,
+    objective: ObjectiveSpec | None = None,
+) -> list[SolverResult]:
     """返回 eval 阶段要对比的 baseline 结果。"""
 
     results = [
-        random_legal(instance, seed=seed),
-        effect_only_greedy(instance),
-        scalarized_independent_greedy(instance),
+        random_legal(instance, seed=seed, objective=objective),
+        effect_only_greedy(instance, objective=objective),
+        scalarized_independent_greedy(instance, objective=objective),
     ]
     if include_local_search:
-        results.append(local_search_best_improvement(instance, max_iter=instance.n * instance.m))
+        results.append(
+            local_search_best_improvement(
+                instance, max_iter=instance.n * instance.m, objective=objective
+            )
+        )
     return results
 
 
@@ -273,6 +340,7 @@ def _evaluate(
     assignment_dir: Path,
     include_baselines: bool,
     include_local_search: bool,
+    objective: ObjectiveSpec | None = None,
 ) -> list[dict[str, Any]]:
     """在 eval 实例上运行当前 policy 和可选 baseline，并写出 best assignment。"""
 
@@ -287,6 +355,7 @@ def _evaluate(
             project_config=project_config,
             ppo_config=ppo_config,
             deterministic=True,
+            objective=objective,
         )
         assignment_path = update_dir / f"{instance.instance_name}.assignment.json"
         assignment_path.write_text(
@@ -314,7 +383,12 @@ def _evaluate(
         rows.append(policy_row)
 
         if include_baselines:
-            for result in _baseline_results(instance, seed=seed, include_local_search=include_local_search):
+            for result in _baseline_results(
+                instance,
+                seed=seed,
+                include_local_search=include_local_search,
+                objective=objective,
+            ):
                 rows.append(
                     _result_row(
                         update=update,
@@ -349,6 +423,7 @@ def run_shared_batch_training(
     env_max_steps: int | None = None,
     env_patience: int | None = None,
     tensorboard_dir: str | Path | None = None,
+    objective: ObjectiveSpec | None = None,
 ) -> SharedBatchTrainingResult:
     """通过循环采样多个实例 rollout 来训练一个共享模型。"""
 
@@ -368,6 +443,15 @@ def run_shared_batch_training(
     eval_instances = instances[:eval_count]
     train_paths = paths[eval_count:] or paths
     train_instances = instances[eval_count:] or instances
+    soft = project_config.default["soft_constraints"]
+    effective_objective = objective or legacy_objective_spec(
+        instances[0],
+        H_min=float(soft["entropy_min"]),
+        pi_cap=float(soft["method_cap"]),
+        lambda_div=float(soft["lambda_div"]),
+        lambda_cap=float(soft["lambda_cap"]),
+        epsilon=float(soft["epsilon"]),
+    )
 
     overrides: dict[str, Any] = {
         "seed": int(seed),
@@ -396,6 +480,7 @@ def run_shared_batch_training(
         config=project_config,
         device=resolved_device,
         hidden_dim=hidden_dim,
+        objective=effective_objective,
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=float(ppo_config.learning_rate))
 
@@ -426,6 +511,7 @@ def run_shared_batch_training(
                 assignment_dir=assignment_dir,
                 include_baselines=include_baselines,
                 include_local_search=include_local_search,
+                objective=effective_objective,
             )
         )
         _write_eval_tensorboard_scalars(writer, eval_rows, update=0)
@@ -442,7 +528,7 @@ def run_shared_batch_training(
         for index in sampled_indices:
             instance = train_instances[index]
             instance_path = train_paths[index]
-            env = _build_env(project_config, ppo_config)
+            env = _build_env(project_config, ppo_config, effective_objective)
             rollout, _ = collect_rollout(env=env, instance=instance, model=model, config=ppo_config)
             update_metrics = update_ppo(model=model, optimizer=optimizer, rollout=rollout, config=ppo_config)
             total_illegal += int(rollout.illegal_action_count)
@@ -516,6 +602,7 @@ def run_shared_batch_training(
                 assignment_dir=assignment_dir,
                 include_baselines=include_baselines,
                 include_local_search=include_local_search,
+                objective=effective_objective,
             )
             eval_rows.extend(new_eval_rows)
             _write_eval_tensorboard_scalars(writer, new_eval_rows, update=update)
@@ -529,12 +616,19 @@ def run_shared_batch_training(
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
+            "format_version": 2,
             "model_state_dict": model.state_dict(),
             "config": ppo_config.__dict__,
+            "ppo_config": ppo_config.__dict__,
             "train_log": train_rows,
             "eval_log": eval_rows,
             "train_instance_paths": [str(path) for path in train_paths],
             "eval_instance_paths": [str(path) for path in eval_paths],
+            "provenance": checkpoint_metadata(
+                effective_objective,
+                method_hash=method_matrix_hash(instances[0]),
+                data_hash=collection_data_hash(instances),
+            ),
         },
         checkpoint_path,
     )

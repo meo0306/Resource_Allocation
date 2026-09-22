@@ -1,5 +1,6 @@
 """Tests for minimal masked PPO solver."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +14,9 @@ from pa_moap_rl.solvers.ppo_solver import (
     PPOConfig,
     build_actor_critic,
     collect_rollout,
+    collect_vectorized_rollout,
     compute_gae,
+    pad_and_stack_observations,
     solve_ppo,
     update_ppo,
 )
@@ -61,6 +64,102 @@ def test_collect_rollout_has_no_illegal_actions_and_expected_shapes() -> None:
     assert rollout.observations["assignment"].shape == (4, instance.n)
 
 
+def _truncated_instance(instance, n: int):
+    selected_ids = instance.selected_ids[:n]
+    return replace(
+        instance,
+        instance_name=f'{instance.instance_name}-n{n}',
+        selected_ids=selected_ids,
+        original_to_local_id={
+            original: index for index, original in enumerate(selected_ids)
+        },
+        n=n,
+        category_id=instance.category_id[:n].copy(),
+        cognitive_load=instance.cognitive_load[:n].copy(),
+        concept_need=instance.concept_need[:n].copy(),
+        effect_matrix=instance.effect_matrix[:n].copy(),
+        student_pref=instance.student_pref[:n].copy(),
+        teacher_pref=instance.teacher_pref[:n].copy(),
+        feasible_mask=instance.feasible_mask[:n].copy(),
+    )
+
+
+def test_vectorized_rollout_pads_nodes_and_pools_equal_budgets() -> None:
+    large = _example_instance()
+    small = _truncated_instance(large, large.n - 3)
+    envs = [
+        MethodAssignmentEnv(max_steps=4, patience=4),
+        MethodAssignmentEnv(max_steps=4, patience=4),
+    ]
+    model = build_actor_critic(large, device='cpu', hidden_dim=16)
+    config = PPOConfig(
+        rollout_steps=4,
+        minibatch_size=2,
+        update_epochs=1,
+        device='cpu',
+        seed=13,
+    )
+    initial = [
+        env.reset(instance) for env, instance in zip(envs, [small, large])
+    ]
+    padded = pad_and_stack_observations(initial)
+    assert padded['assignment'].shape == (2, large.n)
+    assert not padded['node_mask'][0, small.n:].any()
+    assert not padded['action_mask'][0, small.n:].any()
+
+    torch.manual_seed(13)
+    rollout = collect_vectorized_rollout(
+        envs=envs,
+        instances=[small, large],
+        model=model,
+        config=config,
+    )
+    assert rollout.actions.shape == (8,)
+    assert rollout.observations['assignment'].shape == (8, large.n)
+    assert rollout.environment_count == 2
+    assert rollout.steps_per_environment == 4
+    assert rollout.illegal_action_count == 0
+    assert len(rollout.instance_summaries) == 2
+    for advantages in rollout.advantages.reshape(2, 4):
+        assert float(advantages.mean()) == pytest.approx(0.0, abs=1.0e-5)
+        assert float(advantages.std(unbiased=False)) == pytest.approx(1.0, abs=1.0e-4)
+
+
+def test_vectorized_batch_one_matches_single_environment_collection() -> None:
+    instance = _example_instance()
+    config = PPOConfig(
+        rollout_steps=4,
+        minibatch_size=2,
+        update_epochs=1,
+        device='cpu',
+        seed=17,
+    )
+    model = build_actor_critic(instance, device='cpu', hidden_dim=16)
+    torch.manual_seed(17)
+    single, _ = collect_rollout(
+        env=MethodAssignmentEnv(max_steps=4, patience=4),
+        instance=instance,
+        model=model,
+        config=config,
+    )
+    torch.manual_seed(17)
+    joint = collect_vectorized_rollout(
+        envs=[MethodAssignmentEnv(max_steps=4, patience=4)],
+        instances=[instance],
+        model=model,
+        config=config,
+    )
+    torch.testing.assert_close(joint.actions, single.actions)
+    torch.testing.assert_close(joint.old_log_probs, single.old_log_probs)
+    torch.testing.assert_close(joint.rewards, single.rewards)
+    torch.testing.assert_close(joint.returns, single.returns)
+    torch.testing.assert_close(joint.advantages, single.advantages)
+    np.testing.assert_array_equal(
+        joint.instance_summaries[0].best_assignment,
+        single.best_assignment,
+    )
+
+
 def test_update_ppo_runs_backward_and_returns_losses() -> None:
     instance = _example_instance()
     env = MethodAssignmentEnv(max_steps=4, patience=4)
@@ -73,6 +172,42 @@ def test_update_ppo_runs_backward_and_returns_losses() -> None:
 
     assert {"policy_loss", "value_loss", "entropy", "approx_kl", "loss"} <= set(metrics)
     assert np.isfinite(list(metrics.values())).all()
+    assert metrics['ppo_epochs_executed'] == pytest.approx(1.0)
+    assert metrics['optimizer_minibatches'] == pytest.approx(2.0)
+    assert metrics['target_kl_triggered'] == pytest.approx(0.0)
+
+
+def test_target_kl_stops_after_first_completed_epoch() -> None:
+    instance = _example_instance()
+    env = MethodAssignmentEnv(max_steps=4, patience=4)
+    model = build_actor_critic(instance, device='cpu', hidden_dim=16)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1.0e-2)
+    config = PPOConfig(
+        rollout_steps=4,
+        minibatch_size=2,
+        update_epochs=4,
+        target_kl=1.0e-12,
+        device='cpu',
+        seed=11,
+    )
+    rollout, _ = collect_rollout(
+        env=env,
+        instance=instance,
+        model=model,
+        config=config,
+    )
+
+    metrics = update_ppo(
+        model=model,
+        optimizer=optimizer,
+        rollout=rollout,
+        config=config,
+    )
+
+    assert metrics['target_kl_triggered'] == pytest.approx(1.0)
+    assert metrics['target_kl_observed'] > config.target_kl
+    assert metrics['ppo_epochs_executed'] == pytest.approx(1.0)
+    assert metrics['optimizer_minibatches'] == pytest.approx(2.0)
 
 
 def test_solve_ppo_smoke_returns_feasible_solution_and_log(tmp_path: Path) -> None:

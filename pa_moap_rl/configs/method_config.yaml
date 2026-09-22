@@ -37,6 +37,7 @@ methods:
   - 在线自适应学习
 
 # D_C, shape = [K, 5], columns follow dimensions.activity.
+# 类别原型矩阵D_C：类别 c的知识点在第 k个教学活动维度上的典型需求强度
 category_prototype:
   - [0.90, 0.20, 0.15, 0.20, 0.20]
   - [0.70, 0.60, 0.25, 0.45, 0.35]
@@ -46,6 +47,7 @@ category_prototype:
   - [0.30, 0.65, 0.50, 0.90, 0.60]
 
 # R, shape = [M, 6], columns follow dimensions.full.
+# 方法属性矩阵：教学方法 m在第 k个教学交互属性维度上的强度
 method_attr:
   - [0.90, 0.20, 0.10, 0.10, 0.10, 0.30]
   - [0.40, 0.90, 0.25, 0.55, 0.75, 0.55]
@@ -60,6 +62,7 @@ method_attr:
   - [0.75, 0.35, 0.55, 0.80, 0.20, 0.55]
 
 # A_E, shape = [M, K], rows follow methods, columns follow categories.
+# 方法-类别教学效果矩阵：教学方法 m与知识点类别 c的理论教学效果匹配度
 effect_matrix_by_category:
   - [0.90, 0.70, 0.40, 0.20, 0.30, 0.40]
   - [0.30, 0.70, 0.50, 0.40, 0.60, 0.80]

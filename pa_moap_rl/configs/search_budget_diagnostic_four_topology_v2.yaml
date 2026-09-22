@@ -1,0 +1,64 @@
+schema_version: 1
+experiment_id: four_topology_b075_search_budget_diagnostic_v1
+status: user_confirmed
+
+preference_response_config: pa_moap_rl/configs/preference_response_four_topology_v2.yaml
+
+search_protocol:
+  anchor_conditions:
+    - condition_id: current_b128_p32
+      max_steps: 128
+      patience: 32
+  fixed_step_budgets:
+    - 128
+    - 256
+    - 512
+  budget_scan_patience: equal_budget
+  n_scaled_budget:
+    formula: unit_times_ceil_n_over_unit
+    unit: 128
+    patience: equal_budget
+    interpretation: round upward so max_steps is at least N
+  patience_scan:
+    max_steps: 512
+    values:
+      - 32
+      - 64
+      - 128
+      - 256
+      - 512
+
+analysis:
+  baseline_scenario_id: controlled_balanced
+  teacher_only_scenario_id: controlled_teacher_only
+  exact_reference: proven_optimum
+  accepted_move_definition: reward > environment.improvement_eps
+  anytime_milestones:
+    - 0
+    - 1
+    - 2
+    - 4
+    - 8
+    - 16
+    - 32
+    - 64
+    - 128
+    - 256
+    - 384
+    - 512
+    - 640
+    - 768
+  quality_gap_rates:
+    - 0.01
+    - 0.02
+    - 0.03
+    - 0.05
+  score_tolerance: 1.0e-9
+  inference_parameters_frozen: false
+  teaching_quality_threshold_defined: false
+
+run:
+  output_dir: results/four_topology_b075_search_budget_diagnostic_v1
+  seed: 0
+  resume: true
+  compression: gzip

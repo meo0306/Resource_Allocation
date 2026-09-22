@@ -1,0 +1,125 @@
+schema_version: 1
+experiment_id: four_topology_b075_service_efficiency_v1
+status: user_authorized
+engine_version: batched_policy_service_v1
+baseline_service_version: threaded_request_service_v1
+
+frozen_ppo:
+  config: pa_moap_rl/configs/ppo_inference_frozen_four_topology_v2.yaml
+  config_sha256: eca9a2aa6c221acdd04a54fb391f2304c35ab54cff57975165b54a2a43928cd6
+  checkpoint: results/four_topology_b075_seed0_pilot_stabilization_run03/checkpoints/update_000060.pt
+  checkpoint_sha256: f3bc64e0a33d990c6612fbc9a3f33b48e29654dbf284ddb0e4b3a6640fed13df
+  expected_update: 60
+  model_version: legacy_separate_v1
+
+objective:
+  config: pa_moap_rl/configs/objective_frozen_four_topology_v2.yaml
+  config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+
+data:
+  instance_manifest: data_processed/four_topology_exploratory_v2/dev_calibration.csv
+  core_manifest: data_processed/four_topology_exploratory_v2/calibration_core_72.csv
+  controlled_pairs: data_processed/four_topology_exploratory_v2/controlled_pairs_288.csv
+  controlled_scenarios: data_processed/four_topology_exploratory_v2/controlled_scenarios_v2.json
+  interpolation_pairs: data_processed/four_topology_exploratory_v2/full_calibration_pairs_540.csv
+  interpolation_scenarios: data_processed/four_topology_exploratory_v2/interpolation_scenarios_v2.json
+  controlled_exact_dir: results/objective_calibration_four_topology_v2/controlled_cross/instances/b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+  access_status: development_only_not_independent_test
+
+preflight:
+  equivalence_request_count: 4
+  score_tolerance: 1.0e-9
+  max_steps: 512
+  patience: 32
+
+quality_frontier:
+  stratified_request_count: 36
+  ppo_batch_size: 8
+  ppo_budgets:
+    - id: ppo_128_32
+      max_steps: 128
+      patience: 32
+    - id: ppo_512_32_frozen
+      max_steps: 512
+      patience: 32
+  baselines:
+    - id: effect_greedy
+      solver: effect_greedy
+      concurrency: 1
+    - id: scalarized_greedy
+      solver: scalarized_greedy
+      concurrency: 1
+    - id: local_best_i4
+      solver: local_search_best
+      max_iter: 4
+      concurrency: 1
+    - id: local_best_i16
+      solver: local_search_best
+      max_iter: 16
+      concurrency: 1
+    - id: local_best_i64
+      solver: local_search_best
+      max_iter: 64
+      concurrency: 1
+    - id: gurobi_t0p25
+      solver: gurobi
+      time_limit: 0.25
+      gurobi_threads: 1
+      concurrency: 1
+    - id: gurobi_t1
+      solver: gurobi
+      time_limit: 1.0
+      gurobi_threads: 1
+      concurrency: 1
+    - id: gurobi_t5
+      solver: gurobi
+      time_limit: 5.0
+      gurobi_threads: 1
+      concurrency: 1
+  match_tolerance: 1.0e-4
+  require_both_mean_and_p90_gap: true
+
+service_workloads:
+  batch_sizes: [1, 8, 32, 128]
+  warmup_batches_per_cell: 1
+  measured_batches_per_cell: 6
+  same_content_many_preferences:
+    anchor_source: calibration_core_72
+    scenario_source: interpolation_scenarios_v2
+    distinct_preferences_within_batch: true
+    content_static_cache_allowed: true
+  new_content_new_preferences:
+    pair_source: full_calibration_pairs_540
+    n_bucketed_primary: true
+    mixed_padding_sensitivity: true
+
+baseline_service:
+  request_count_per_workload: 36
+  concurrency_levels: [1, 4]
+  configurations:
+    - id: scalarized_greedy
+      solver: scalarized_greedy
+    - id: local_best_i16
+      solver: local_search_best
+      max_iter: 16
+    - id: gurobi_t1
+      solver: gurobi
+      time_limit: 1.0
+      gurobi_threads: 1
+
+measurement:
+  device: cuda
+  deterministic: true
+  cold_start_repetitions: 3
+  gpu_synchronize: true
+  clock: perf_counter
+  report_request_and_batch_latency: true
+  report_mean_median_p95_max: true
+  report_cpu_rss_and_cuda_peak_memory: true
+  training_time_reported_separately: true
+
+run:
+  output_dir: results/four_topology_b075_service_efficiency_v1
+  resume: true
+  fail_on_existing_mismatch: true
+  no_training: true

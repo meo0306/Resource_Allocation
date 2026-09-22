@@ -13,6 +13,7 @@ import numpy as np
 
 from pa_moap_rl.configs import PAConfig, load_config
 from pa_moap_rl.data.instance_schema import AssignmentInstance, validate_assignment_instance
+from pa_moap_rl.objective import ObjectiveSpec
 from pa_moap_rl.utils.masks import assert_action_legal, build_action_mask, feasible_mask_from_instance
 from pa_moap_rl.utils.scoring import ScoreBreakdown, method_distribution, score_assignment
 
@@ -32,12 +33,20 @@ class MethodAssignmentEnv:
         lambda_div: float | None = None,
         lambda_cap: float | None = None,
         epsilon: float | None = None,
+        objective: ObjectiveSpec | None = None,
     ) -> None:
         """初始化环境超参数与软约束参数。
 
         如果调用者没有显式传入参数，就从默认 YAML 配置读取。
         """
 
+        if objective is not None and any(
+            value is not None
+            for value in (entropy_min, method_cap, lambda_div, lambda_cap, epsilon)
+        ):
+            raise ValueError(
+                "Do not combine ObjectiveSpec with external threshold or penalty overrides."
+            )
         cfg = config if config is not None else load_config()
         environment = cfg.default["environment"]
         soft_constraints = cfg.default["soft_constraints"]
@@ -57,6 +66,14 @@ class MethodAssignmentEnv:
         self.lambda_div = float(lambda_div if lambda_div is not None else soft_constraints["lambda_div"])
         self.lambda_cap = float(lambda_cap if lambda_cap is not None else soft_constraints["lambda_cap"])
         self.epsilon = float(epsilon if epsilon is not None else soft_constraints["epsilon"])
+
+        self.objective = objective
+        if objective is not None:
+            self.entropy_min = objective.entropy_min
+            self.method_cap = objective.method_cap
+            self.lambda_div = objective.beta_entropy
+            self.lambda_cap = objective.beta_cap
+            self.epsilon = objective.epsilon
 
         self.instance: AssignmentInstance | None = None
         self.assignment: np.ndarray | None = None
@@ -181,6 +198,14 @@ class MethodAssignmentEnv:
         assert self.assignment is not None
         assert self.current_score is not None
 
+        if self.objective is None:
+            objective_target = self.instance.target_distribution.copy()
+        elif self.objective.target_distribution is None:
+            objective_target = np.zeros(self.instance.m, dtype=np.float64)
+        else:
+            objective_target = np.asarray(
+                self.objective.target_distribution, dtype=np.float64
+            ).copy()
         return {
             "category_id": self.instance.category_id.copy(),
             "cognitive_load": self.instance.cognitive_load.copy(),
@@ -196,8 +221,8 @@ class MethodAssignmentEnv:
             "action_mask": self.get_action_mask(),
             "method_distribution": self.current_score.method_distribution.copy(),
             "method_dist": self.current_score.method_distribution.copy(),
-            "target_distribution": self.instance.target_distribution.copy(),
-            "target_dist": self.instance.target_distribution.copy(),
+            "target_distribution": objective_target,
+            "target_dist": objective_target.copy(),
             "current_scores": self._score_vector(self.current_score),
         }
 
@@ -205,6 +230,12 @@ class MethodAssignmentEnv:
         """使用当前环境软约束参数计算 assignment 评分。"""
 
         assert self.instance is not None
+        if self.objective is not None:
+            return score_assignment(
+                assignment,
+                instance=self.instance,
+                objective=self.objective,
+            )
         return score_assignment(
             assignment,
             instance=self.instance,
@@ -213,6 +244,7 @@ class MethodAssignmentEnv:
             lambda_div=self.lambda_div,
             lambda_cap=self.lambda_cap,
             epsilon=self.epsilon,
+            objective=self.objective,
         )
 
     @staticmethod
@@ -242,6 +274,7 @@ class MethodAssignmentEnv:
 
     @staticmethod
     def _validate_assignment(instance: AssignmentInstance, assignment: np.ndarray) -> None:
+        """"""
         values = np.asarray(assignment, dtype=np.int64)
         if values.shape != (instance.n,):
             raise ValueError(f"assignment shape must be {(instance.n,)}, got {values.shape}.")

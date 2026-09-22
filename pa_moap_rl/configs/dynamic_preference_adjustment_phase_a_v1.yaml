@@ -1,0 +1,114 @@
+schema_version: 1
+experiment_id: four_topology_b075_dynamic_preference_phase_a_v1
+status: user_confirmed
+engine_version: dynamic_preference_adjustment_v1
+scope: frozen_ppo_inference_only_no_training
+
+frozen_ppo:
+  config: pa_moap_rl/configs/ppo_inference_frozen_four_topology_v2.yaml
+  config_sha256: eca9a2aa6c221acdd04a54fb391f2304c35ab54cff57975165b54a2a43928cd6
+  checkpoint: results/four_topology_b075_seed0_pilot_stabilization_run03/checkpoints/update_000060.pt
+  checkpoint_sha256: f3bc64e0a33d990c6612fbc9a3f33b48e29654dbf284ddb0e4b3a6640fed13df
+  expected_update: 60
+  model_version: legacy_separate_v1
+
+objective:
+  config: pa_moap_rl/configs/objective_frozen_four_topology_v2.yaml
+  config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+
+data:
+  instance_manifest: data_processed/four_topology_exploratory_v2/dev_calibration.csv
+  core_manifest: data_processed/four_topology_exploratory_v2/calibration_core_72.csv
+  access_status: development_only_not_independent_test
+  sample_rule: first_original_id_per_size_topology_stratum
+  expected_strata: 36
+
+dynamic_preferences:
+  version: controlled_linear_transition_v1
+  seed: 20260922
+  baseline:
+    scenario_id: dynamic_baseline_s6_t6
+    student_template: S6
+    teacher_template: T6
+    student_profile: [0.60, 0.60, 0.60, 0.60, 0.60, 0.70]
+    teacher_profile: [0.60, 0.60, 0.60, 0.60, 0.60, 0.75]
+  fractions: [0.25, 1.00]
+  transitions:
+    - id: student_only
+      target_student_template: S4
+      target_teacher_template: T6
+      target_student_profile: [0.30, 0.55, 0.65, 0.90, 0.45, 0.80]
+      target_teacher_profile: [0.60, 0.60, 0.60, 0.60, 0.60, 0.75]
+    - id: teacher_only
+      target_student_template: S6
+      target_teacher_template: T4
+      target_student_profile: [0.60, 0.60, 0.60, 0.60, 0.60, 0.70]
+      target_teacher_profile: [0.40, 0.75, 0.80, 0.70, 0.95, 0.90]
+    - id: conflict
+      target_student_template: S1
+      target_teacher_template: T4
+      target_student_profile: [0.85, 0.30, 0.25, 0.25, 0.25, 0.55]
+      target_teacher_profile: [0.40, 0.75, 0.80, 0.70, 0.95, 0.90]
+
+methods:
+  old_solution:
+    old_assignment_source: frozen_ppo_on_dynamic_baseline_s6_t6
+  scalarized_greedy:
+    start: from_scratch
+  ppo_restart:
+    initial_assignment: effect_only_greedy
+    max_steps: 512
+    patience: 32
+  ppo_old_start:
+    initial_assignment: common_old_ppo_assignment
+    max_steps: 512
+    patience: 32
+  local_old_start:
+    solver: best_improvement
+    initial_assignment: common_old_ppo_assignment
+    max_iter: 16
+  gurobi_rebuild_default_start:
+    time_limit_sec: 1.0
+    threads: 1
+    seed: 20260922
+    default_initial_assignment: scalarized_independent
+  gurobi_rebuild_old_start:
+    time_limit_sec: 1.0
+    threads: 1
+    seed: 20260922
+    warm_start: common_old_ppo_assignment
+  quality_reference:
+    solver: gurobi_exact_or_bounded
+    time_limit_sec: 5.0
+    threads: 1
+    seed: 20260922
+    use_certified_bound_if_not_optimal: true
+
+success_gate:
+  required_ppo_old_start_pareto_cells: 4
+  total_transition_cells: 6
+  required_median_latency_reduction_vs_restart: 0.20
+  max_mean_gap_regression_vs_restart: 0.001
+  required_mean_gap_improvement_if_not_faster: 0.001
+  max_latency_increase_if_quality_route: 0.0
+  dominance_baselines:
+    - scalarized_greedy
+    - local_old_start
+    - gurobi_rebuild_old_start
+  teacher_only_reported_separately: true
+
+measurement:
+  device: cuda
+  deterministic: true
+  gpu_synchronize: true
+  clock: perf_counter
+  score_tolerance: 1.0e-9
+  switching_cost_in_objective: false
+  conditioning_latency_reported_separately: true
+
+run:
+  output_dir: results/four_topology_b075_dynamic_preference_phase_a_v1
+  resume: true
+  fail_on_existing_mismatch: true
+  no_training: true
+  persistent_gurobi_model_reuse_deferred_until_gate_signal: true

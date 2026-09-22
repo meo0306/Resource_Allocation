@@ -11,6 +11,7 @@ import time
 import numpy as np
 
 from pa_moap_rl.data.instance_schema import AssignmentInstance
+from pa_moap_rl.objective import ObjectiveSpec
 from pa_moap_rl.utils.metrics import SolverResult, make_solver_result
 
 
@@ -26,7 +27,12 @@ def random_legal_assignment(instance: AssignmentInstance, rng: np.random.Generat
     return assignment
 
 
-def solve_random_legal(instance: AssignmentInstance, *, seed: int | None = None) -> SolverResult:
+def solve_random_legal(
+    instance: AssignmentInstance,
+    *,
+    seed: int | None = None,
+    objective: ObjectiveSpec | None = None,
+) -> SolverResult:
     """运行一次随机可行 baseline，并包装为 `SolverResult`。"""
 
     start = time.perf_counter()
@@ -38,13 +44,19 @@ def solve_random_legal(instance: AssignmentInstance, *, seed: int | None = None)
         instance=instance,
         assignment=assignment,
         runtime=runtime,
+        objective=objective,
     )
 
 
-def random_legal(instance: AssignmentInstance, *, seed: int | None = None) -> SolverResult:
+def random_legal(
+    instance: AssignmentInstance,
+    *,
+    seed: int | None = None,
+    objective: ObjectiveSpec | None = None,
+) -> SolverResult:
     """`solve_random_legal` 的简短别名。"""
 
-    return solve_random_legal(instance, seed=seed)
+    return solve_random_legal(instance, seed=seed, objective=objective)
 
 
 __all__ = ["random_legal", "random_legal_assignment", "solve_random_legal"]

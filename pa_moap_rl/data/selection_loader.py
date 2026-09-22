@@ -141,11 +141,40 @@ def find_instance_file(instance_root: str | Path, instance_name: str) -> Path:
     return candidates[0]
 
 
-def load_pre_data_pairs(instance_root: str | Path, selection_root: str | Path) -> list[tuple[Path, SelectionRecord]]:
+def _load_pre_data_pairs_flat(instance_root: str | Path, selection_root: str | Path) -> list[tuple[Path, SelectionRecord]]:
     """批量读取 `pre_data` 中的 CSV 记录，并与同名 `.sm` 文件配对。"""
 
     pairs: list[tuple[Path, SelectionRecord]] = []
     for csv_path in sorted(Path(selection_root).rglob("*.csv")):
         for record in load_selection_csv(csv_path):
             pairs.append((find_instance_file(instance_root, record.instance_name), record))
+    return pairs
+
+# This topology-aware definition intentionally supersedes the legacy flat-layout
+# loader above while retaining backward compatibility for old datasets.
+def load_pre_data_pairs(instance_root: str | Path, selection_root: str | Path) -> list[tuple[Path, SelectionRecord]]:
+    '''Pair selections within their topology directory to disambiguate names.'''
+
+    pairs: list[tuple[Path, SelectionRecord]] = []
+    instance_base = Path(instance_root)
+    selection_base = Path(selection_root)
+    for csv_path in sorted(selection_base.rglob('*.csv')):
+        relative = csv_path.relative_to(selection_base)
+        topology = relative.parts[0] if len(relative.parts) > 1 else None
+        scoped_root = instance_base / topology if topology and (instance_base / topology).is_dir() else instance_base
+        for record in load_selection_csv(csv_path):
+            if scoped_root != instance_base:
+                metadata = dict(record.metadata or {})
+                metadata['input_topology'] = topology
+                metadata['topology'] = 'bottleneck' if topology == 'manual_bottleneck' else topology
+                record = SelectionRecord(
+                    instance_name=record.instance_name,
+                    selected_ids=record.selected_ids,
+                    x=record.x,
+                    row_type=record.row_type,
+                    source_csv=record.source_csv,
+                    instance_dir=record.instance_dir,
+                    metadata=metadata,
+                )
+            pairs.append((find_instance_file(scoped_root, record.instance_name), record))
     return pairs

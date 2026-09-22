@@ -1,0 +1,61 @@
+schema_version: 1
+evaluation_id: four_topology_b075_pure_ppo_preference_ranking_controlled_cross_v1
+status: protocol_confirmed_post_training_evaluation
+evaluator_version: versioned_pure_ppo_controlled_cross_with_endpoint_mechanism_v1
+
+protocol:
+  path: pa_moap_rl/configs/preference_ranking_ablation_protocol_v3.yaml
+  sha256: 0497bb868622819d156e24004535b3448426c2adff63e9f5b4909aabb0e53e62
+
+preference_response_config: pa_moap_rl/configs/preference_response_four_topology_v2.yaml
+
+objective:
+  config: pa_moap_rl/configs/objective_frozen_four_topology_v2.yaml
+  config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+
+data:
+  core_manifest: data_processed/four_topology_exploratory_v2/calibration_core_72.csv
+  pair_manifest: data_processed/four_topology_exploratory_v2/controlled_pairs_288.csv
+  scenario_bank: data_processed/four_topology_exploratory_v2/controlled_scenarios_v2.json
+  exact_result_dir: results/objective_calibration_four_topology_v2/controlled_cross/instances/b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+  access_status: controlled_calibration
+
+arms:
+  D:
+    evaluation_config: pa_moap_rl/configs/preference_ranking_response_arm_D_v3.yaml
+    run_dir: results/four_topology_b075_pure_ppo_ranking_ablation_v1/D__exact_delta_listwise_rank_v1
+    checkpoint: results/four_topology_b075_pure_ppo_ranking_ablation_v1/D__exact_delta_listwise_rank_v1/checkpoints/best.pt
+    expected_update: 90
+    checkpoint_sha256: cbde752d982ccc1250752ee35d007c026ce430f526f48150e802b1deae8e5cce
+    evaluation_dir: results/four_topology_b075_pure_ppo_ranking_ablation_v1/controlled_cross_evaluation_v1/arm_D
+  E:
+    evaluation_config: pa_moap_rl/configs/preference_ranking_response_arm_E_v3.yaml
+    run_dir: results/four_topology_b075_pure_ppo_ranking_ablation_v1/E__rank_plus_counterfactual_alignment_v1
+    checkpoint: results/four_topology_b075_pure_ppo_ranking_ablation_v1/E__rank_plus_counterfactual_alignment_v1/checkpoints/best.pt
+    expected_update: 80
+    checkpoint_sha256: 3d901e3fe2a5e11bd59129491584afc62748cfd80781fa0d6e94bec618fe89e6
+    evaluation_dir: results/four_topology_b075_pure_ppo_ranking_ablation_v1/controlled_cross_evaluation_v1/arm_E
+
+inference:
+  device: cuda
+  deterministic: true
+  max_steps: 512
+  patience: 32
+
+mechanism:
+  baseline_scenario_id: controlled_balanced
+  teacher_scenario_id: controlled_teacher_only
+  positive_gain_tolerance: 1.0e-9
+  top_k: [1, 5, 10]
+
+bootstrap:
+  seed: 20260921
+  repetitions: 10000
+  cluster: source_family_id
+  confidence: 0.95
+
+run:
+  output_dir: results/four_topology_b075_pure_ppo_ranking_ablation_v1/controlled_cross_evaluation_v1
+  resume: true
+  pure_ppo_only: true
+  no_training: true

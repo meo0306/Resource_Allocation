@@ -12,10 +12,11 @@ import time
 import numpy as np
 
 from pa_moap_rl.data.instance_schema import AssignmentInstance
+from pa_moap_rl.objective import ObjectiveSpec
 from pa_moap_rl.solvers.greedy_solver import effect_only_greedy, scalarized_independent_assignment
 from pa_moap_rl.solvers.random_solver import random_legal_assignment
 from pa_moap_rl.utils.metrics import SolverResult, make_solver_result
-from pa_moap_rl.utils.scoring import score_assignment
+from pa_moap_rl.utils.scoring import IncrementalAssignmentScorer, score_assignment
 
 
 def _validate_initial(instance: AssignmentInstance, assignment: np.ndarray | list[int]) -> np.ndarray:
@@ -36,6 +37,7 @@ def _best_improving_action(
     assignment: np.ndarray,
     current_score: float,
     tolerance: float,
+    objective: ObjectiveSpec | None = None,
 ) -> tuple[tuple[int, int] | None, float]:
     """穷举所有合法单点替换，返回收益最大的正向动作。"""
 
@@ -49,7 +51,9 @@ def _best_improving_action(
                 continue
             candidate = assignment.copy()
             candidate[i] = method
-            candidate_score = score_assignment(candidate, instance=instance).total_score
+            candidate_score = score_assignment(
+                candidate, instance=instance, objective=objective
+            ).total_score
             delta = candidate_score - current_score
             if delta > best_delta + tolerance:
                 best_delta = delta
@@ -63,6 +67,7 @@ def _first_improving_action(
     current_score: float,
     tolerance: float,
     rng: np.random.Generator | None = None,
+    objective: ObjectiveSpec | None = None,
 ) -> tuple[tuple[int, int] | None, float]:
     """按节点/方法顺序或随机顺序返回第一个正向改进动作。"""
 
@@ -81,14 +86,16 @@ def _first_improving_action(
                 continue
             candidate = assignment.copy()
             candidate[i] = method
-            candidate_score = score_assignment(candidate, instance=instance).total_score
+            candidate_score = score_assignment(
+                candidate, instance=instance, objective=objective
+            ).total_score
             delta = candidate_score - current_score
             if delta > tolerance:
                 return (i, method), float(delta)
     return None, 0.0
 
 
-def _run_local_search(
+def _run_local_search_full_reference(
     instance: AssignmentInstance,
     assignment: np.ndarray,
     *,
@@ -96,18 +103,30 @@ def _run_local_search(
     max_iter: int | None,
     tolerance: float,
     rng: np.random.Generator | None = None,
+    objective: ObjectiveSpec | None = None,
 ) -> tuple[np.ndarray, list[float]]:
     """执行局部搜索主循环并记录每次接受动作后的目标值。"""
 
-    current_score = score_assignment(assignment, instance=instance).total_score
+    current_score = score_assignment(
+        assignment, instance=instance, objective=objective
+    ).total_score
     history = [current_score]
     max_iter = int(max_iter if max_iter is not None else instance.n * instance.m)
 
     for _ in range(max_iter):
         if strategy == "best":
-            action, delta = _best_improving_action(instance, assignment, current_score, tolerance)
+            action, delta = _best_improving_action(
+                instance, assignment, current_score, tolerance, objective
+            )
         elif strategy == "first":
-            action, delta = _first_improving_action(instance, assignment, current_score, tolerance, rng=rng)
+            action, delta = _first_improving_action(
+                instance,
+                assignment,
+                current_score,
+                tolerance,
+                rng=rng,
+                objective=objective,
+            )
         else:
             raise ValueError(f"unknown local search strategy: {strategy!r}")
 
@@ -120,28 +139,77 @@ def _run_local_search(
     return assignment, history
 
 
+def _run_local_search(
+    instance: AssignmentInstance,
+    assignment: np.ndarray,
+    *,
+    strategy: str,
+    max_iter: int | None,
+    tolerance: float,
+    rng: np.random.Generator | None = None,
+    objective: ObjectiveSpec | None = None,
+) -> tuple[np.ndarray, list[float]]:
+    '''Run local search using cached O(M) replacement scores.'''
+
+    scorer = IncrementalAssignmentScorer(assignment, instance, objective=objective)
+    history = [scorer.score]
+    limit = int(max_iter if max_iter is not None else instance.n * instance.m)
+    for _ in range(limit):
+        nodes = rng.permutation(instance.n) if rng is not None else np.arange(instance.n)
+        best_action: tuple[int, int] | None = None
+        best_delta = 0.0
+        for raw_i in nodes:
+            i = int(raw_i)
+            methods = np.flatnonzero(instance.feasible_mask[i])
+            if rng is not None:
+                methods = rng.permutation(methods)
+            for raw_method in methods:
+                method = int(raw_method)
+                if method == int(scorer.assignment[i]):
+                    continue
+                delta = scorer.candidate_delta(i, method)
+                if delta > tolerance and strategy == 'first':
+                    best_action = (i, method)
+                    best_delta = delta
+                    break
+                if delta > best_delta + tolerance:
+                    best_action = (i, method)
+                    best_delta = delta
+            if best_action is not None and strategy == 'first':
+                break
+        if strategy not in {'best', 'first'}:
+            raise ValueError(f'unknown local search strategy: {strategy!r}')
+        if best_action is None:
+            break
+        scorer.apply(*best_action)
+        history.append(scorer.score)
+    return scorer.assignment.copy(), history
+
+
 def local_search_best_improvement(
     instance: AssignmentInstance,
     initial_assignment: np.ndarray | list[int] | None = None,
     *,
     max_iter: int | None = None,
     tolerance: float = 1.0e-12,
+    objective: ObjectiveSpec | None = None,
 ) -> SolverResult:
     """运行确定性的 best-improvement 单点局部搜索。"""
 
     start = time.perf_counter()
     assignment = (
-        scalarized_independent_assignment(instance)
+        scalarized_independent_assignment(instance, objective=objective)
         if initial_assignment is None
         else _validate_initial(instance, initial_assignment)
     )
-    initial_score = score_assignment(assignment, instance=instance).total_score
+    initial_score = score_assignment(assignment, instance=instance, objective=objective).total_score
     assignment, history = _run_local_search(
         instance,
         assignment,
         strategy="best",
         max_iter=max_iter,
         tolerance=tolerance,
+        objective=objective,
     )
     runtime = time.perf_counter() - start
     return make_solver_result(
@@ -151,7 +219,8 @@ def local_search_best_improvement(
         runtime=runtime,
         history=history,
         initial_score=initial_score,
-        greedy_score=effect_only_greedy(instance).score.total_score,
+        greedy_score=effect_only_greedy(instance, objective=objective).score.total_score,
+        objective=objective,
     )
 
 
@@ -162,6 +231,7 @@ def local_search_first_improvement(
     max_iter: int | None = None,
     tolerance: float = 1.0e-12,
     seed: int | None = None,
+    objective: ObjectiveSpec | None = None,
     shuffle: bool = False,
 ) -> SolverResult:
     """运行 first-improvement 单点局部搜索。"""
@@ -169,11 +239,11 @@ def local_search_first_improvement(
     start = time.perf_counter()
     rng = np.random.default_rng(seed) if shuffle else None
     assignment = (
-        scalarized_independent_assignment(instance)
+        scalarized_independent_assignment(instance, objective=objective)
         if initial_assignment is None
         else _validate_initial(instance, initial_assignment)
     )
-    initial_score = score_assignment(assignment, instance=instance).total_score
+    initial_score = score_assignment(assignment, instance=instance, objective=objective).total_score
     assignment, history = _run_local_search(
         instance,
         assignment,
@@ -181,6 +251,7 @@ def local_search_first_improvement(
         max_iter=max_iter,
         tolerance=tolerance,
         rng=rng,
+        objective=objective,
     )
     runtime = time.perf_counter() - start
     return make_solver_result(
@@ -190,7 +261,8 @@ def local_search_first_improvement(
         runtime=runtime,
         history=history,
         initial_score=initial_score,
-        greedy_score=effect_only_greedy(instance).score.total_score,
+        greedy_score=effect_only_greedy(instance, objective=objective).score.total_score,
+        objective=objective,
     )
 
 
@@ -201,6 +273,7 @@ def random_restart_local_search(
     max_iter: int | None = None,
     tolerance: float = 1.0e-12,
     seed: int | None = None,
+    objective: ObjectiveSpec | None = None,
     strategy: str = "best",
 ) -> SolverResult:
     """从多个随机可行初解出发运行局部搜索，并返回最好结果。"""
@@ -222,9 +295,10 @@ def random_restart_local_search(
             strategy=strategy,
             max_iter=max_iter,
             tolerance=tolerance,
+            objective=objective,
             rng=rng if strategy == "first" else None,
         )
-        score = score_assignment(assignment, instance=instance).total_score
+        score = score_assignment(assignment, instance=instance, objective=objective).total_score
         if score > best_score:
             best_score = score
             best_assignment = assignment.copy()
@@ -238,7 +312,8 @@ def random_restart_local_search(
         assignment=best_assignment,
         runtime=runtime,
         history=best_history,
-        greedy_score=effect_only_greedy(instance).score.total_score,
+        greedy_score=effect_only_greedy(instance, objective=objective).score.total_score,
+        objective=objective,
     )
 
 
@@ -247,13 +322,17 @@ def has_positive_one_point_improvement(
     assignment: np.ndarray | list[int],
     *,
     tolerance: float = 1.0e-12,
+    objective: ObjectiveSpec | None = None,
 ) -> bool:
     """判断当前 assignment 是否还存在任意正收益单点替换。"""
 
     values = _validate_initial(instance, assignment)
-    current_score = score_assignment(values, instance=instance).total_score
-    action, _ = _best_improving_action(instance, values, current_score, tolerance)
-    return action is not None
+    scorer = IncrementalAssignmentScorer(values, instance, objective=objective)
+    for i in range(instance.n):
+        for method in np.flatnonzero(instance.feasible_mask[i]):
+            if int(method) != int(values[i]) and scorer.candidate_delta(i, int(method)) > tolerance:
+                return True
+    return False
 
 
 __all__ = [

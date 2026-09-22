@@ -1,0 +1,21 @@
+schema_version: 1
+diagnostic_id: four_topology_b075_preference_repair_arm_B_controlled_cross_v1
+status: ablation_controlled_cross_confirmed
+preference_response_config: pa_moap_rl/configs/preference_response_four_topology_v2.yaml
+checkpoint:
+  arm_id: B
+  path: results/four_topology_b075_pure_ppo_ablation_v1/B__independent_random_v1__objective_delta_symmetric_v2/checkpoints/best.pt
+  run_metadata: results/four_topology_b075_pure_ppo_ablation_v1/B__independent_random_v1__objective_delta_symmetric_v2/run_metadata.json
+  expected_update: 30
+  checkpoint_sha256: 357837db0206bcff68b59d52ce4c32106df36cb444de2cc3b8ed2220bd834425
+inference:
+  max_steps: 512
+  patience: 32
+  deterministic: true
+  device: cuda
+interpretation:
+  pure_ppo_only: true
+  parameters_frozen: false
+run:
+  output_dir: results/four_topology_b075_pure_ppo_ablation_v1/controlled_cross_evaluation_v1/arm_B
+  resume: true

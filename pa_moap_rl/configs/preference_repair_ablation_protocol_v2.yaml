@@ -1,0 +1,121 @@
+schema_version: 1
+protocol_id: four_topology_b075_pure_ppo_preference_repair_ablation_v1
+status: user_confirmed
+
+versions:
+  problem_formulation_version: single_replacement_masked_mdp_v1
+  training_integration_version: formal_training_versioned_injection_v1
+  checkpoint_payload_version: 3
+  scenario_schema_version: 2
+
+objective:
+  config: pa_moap_rl/configs/objective_frozen_four_topology_v2.yaml
+  objective_id: main_no_reference__h0.65__c0.35__be1.00__bc1.00
+  config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+
+data:
+  train_manifest: data_processed/four_topology_exploratory_v2/dev_train.csv
+  validation_manifest: data_processed/four_topology_exploratory_v2/dev_calibration.csv
+  validation_scenarios: data_processed/four_topology_exploratory_v2/controlled_scenarios_v2.json
+  validation_pairs: data_processed/four_topology_exploratory_v2/seed0_pilot_validation_pairs_72.csv
+  allow_controlled_held_out_validation: true
+  data_audit: data_processed/four_topology_exploratory_v2/data_audit.json
+
+common_run:
+  seed: 0
+  device: cuda
+  deterministic: true
+  rollout_mode: joint
+  total_updates: 100
+  instances_per_update: 4
+  rollout_steps: 128
+  minibatch_size: 64
+  update_epochs: 4
+  learning_rate: 1.0e-4
+  entropy_coef: 0.01
+  target_kl: 0.03
+  hidden_dim: 64
+  env_max_steps: 128
+  env_patience: 32
+  eval_env_max_steps: 512
+  eval_env_patience: 32
+  evaluate_at_start: true
+  eval_interval: 10
+  checkpoint_interval: 10
+
+arms:
+  A:
+    purpose: paired_sampling_only
+    sampler_version: paired_counterfactual_v1
+    model_version: legacy_separate_v1
+    feature_version: separate_student_teacher_features_v1
+    network_architecture_version: masked_actor_critic_separate_channels_v1
+    output_dir: results/four_topology_b075_pure_ppo_ablation_v1/A__paired_counterfactual_v1__legacy_separate_v1
+  B:
+    purpose: objective_consistent_symmetric_model_only
+    sampler_version: independent_random_v1
+    model_version: objective_delta_symmetric_v2
+    feature_version: objective_consistent_symmetric_features_v1
+    network_architecture_version: masked_actor_critic_exchange_invariant_v1
+    output_dir: results/four_topology_b075_pure_ppo_ablation_v1/B__independent_random_v1__objective_delta_symmetric_v2
+  C:
+    purpose: paired_sampling_plus_objective_consistent_symmetric_model
+    sampler_version: paired_counterfactual_v1
+    model_version: objective_delta_symmetric_v2
+    feature_version: objective_consistent_symmetric_features_v1
+    network_architecture_version: masked_actor_critic_exchange_invariant_v1
+    output_dir: results/four_topology_b075_pure_ppo_ablation_v1/C__paired_counterfactual_v1__objective_delta_symmetric_v2
+
+execution:
+  train_from_scratch: true
+  arm_order: [A, B, C]
+  run_all_arms_even_if_an_earlier_arm_fails_a_scientific_gate: true
+  no_hyperparameter_changes_between_arms: true
+  no_local_search_or_hybrid_postprocessing: true
+  training_locked_until_status: user_confirmed
+
+checkpoint_selection:
+  evaluation_set: fixed_72_pair_dev_calibration
+  primary: maximize_mean_total_score
+  tiebreak: minimize_p90_exact_relative_gap
+  final_tiebreak: earliest_update
+  numerical_tolerance: 1.0e-12
+
+post_training_evaluation:
+  controlled_cross_pairs: 288
+  inference_env_max_steps: 512
+  inference_env_patience: 32
+  response_profiles: [S6-T6, S4-T6, S6-T4, S1-T4]
+  cluster_bootstrap_unit: source_family_id
+  bootstrap_confidence: 0.95
+
+acceptance_gates:
+  status: user_confirmed
+  engineering:
+    feasible_rate: 1.0
+    illegal_action_count: 0
+    max_score_recomputation_error: 1.0e-9
+    exact_experiment_spec_match_on_restore: true
+  fixed_72_quality:
+    max_mean_exact_relative_gap: 0.00525
+    max_p90_exact_relative_gap: 0.01020
+  pure_ppo_response:
+    min_teacher_only_positive_gain_rate: 0.50
+    min_teacher_only_mean_reoptimization_gain: 0.000055
+    require_teacher_only_cluster_bootstrap_lower_bound_above_zero: true
+    min_student_only_positive_gain_rate: 0.54
+    min_conflict_positive_gain_rate: 0.89
+  selection_among_eligible_arms:
+    primary: maximize_teacher_only_mean_reoptimization_gain
+    tiebreak_1: maximize_fixed_72_mean_total_score
+    tiebreak_2: minimize_fixed_72_p90_exact_relative_gap
+    tiebreak_3: prefer_lower_complexity_A_then_B_then_C
+  interpretation: development_gate_not_independent_confirmation_and_not_teaching_quality_threshold
+
+historical_reference_only:
+  checkpoint: results/four_topology_b075_seed0_pilot_stabilization_run03/checkpoints/checkpoint_update_0060.pt
+  fixed_72_mean_gap: 0.00423
+  fixed_72_p90_gap: 0.00818
+  teacher_only_positive_gain_rate: 0.0
+  student_only_positive_gain_rate_at_512_32: 0.6389
+  conflict_positive_gain_rate_at_512_32: 0.9861

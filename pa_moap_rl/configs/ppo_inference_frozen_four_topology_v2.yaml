@@ -1,0 +1,121 @@
+schema_version: 1
+freeze_record_id: four_topology_b075_ppo_inference_mainline_v1
+status: frozen_by_user_mainline_return_after_failed_stage6a_branch
+frozen_at: 2026-09-21T22:49:07+08:00
+
+decision_scope:
+  training_hyperparameters_frozen: true
+  inference_parameters_frozen: true
+  checkpoint_selection_protocol_frozen: true
+  seed0_reference_checkpoint_frozen: true
+  objective_frozen_separately: true
+  teacher_only_response_claimed_resolved: false
+
+objective:
+  config: pa_moap_rl/configs/objective_frozen_four_topology_v2.yaml
+  config_file_sha256: 71c48aa3eb3c48934aa86eba5761e4b403950e8737a6716453c2be449c7670e7
+  config_hash: b075006e79dc73a06ce76049ac0e3350c2d6b9b3ceb79db6fec57294e5b51606
+
+problem_and_model:
+  problem_formulation_version: single_replacement_masked_mdp_v1
+  model_version: legacy_separate_v1
+  feature_version: separate_student_teacher_features_v1
+  network_architecture_version: masked_actor_critic_separate_channels_v1
+  hidden_dim: 64
+  method_matrix_hash: c979820a85b7f15a7d1886829951df507ebb263f464f5b1a409f76cfdb585b8f
+  data_hash: f57de7e936f52803d963134e427ae78e07a0db04b23f828e8caf14a9abed025a
+
+training:
+  source_config: pa_moap_rl/configs/seed0_pilot_four_topology_v2_stabilization_run03.yaml
+  source_config_sha256: fa79faa83f11a5f7bab3ee3bd636f73d5d350e878f5be5487d3648f5f4975189
+  learning_rate: 1.0e-4
+  target_kl: 0.03
+  rollout_mode: joint
+  rollout_steps: 128
+  instances_per_update: 4
+  advantage_normalization: per_instance_then_pooled
+  training_batch_sampler: size_group_content_unique_topology_diverse
+  update_epochs: 4
+  minibatch_size: 64
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.20
+  value_coef: 0.50
+  entropy_coef: 0.01
+  max_grad_norm: 0.50
+  total_updates: 100
+  env_max_steps: 128
+  env_patience: 32
+  deterministic: true
+  evaluate_at_start: true
+  eval_interval: 10
+  checkpoint_interval: 10
+
+evaluation_and_inference:
+  env_max_steps: 512
+  env_patience: 32
+  deterministic: true
+  action_selection: masked_argmax
+  initial_assignment: effect_greedy
+  return_rule: best_feasible_so_far
+  training_environment_is_separate: true
+
+checkpoint_selection:
+  evaluation_set: fixed_72_pair_dev_calibration
+  evaluation_budget:
+    env_max_steps: 512
+    env_patience: 32
+  primary: maximize_mean_total_score
+  tiebreak: minimize_p90_exact_relative_gap
+  final_tiebreak: earliest_update
+  numerical_tolerance: 1.0e-12
+  select_independently_for_each_seed: true
+  retain_numbered_best_and_latest: true
+
+seed0_reference_checkpoint:
+  path: results/four_topology_b075_seed0_pilot_stabilization_run03/checkpoints/update_000060.pt
+  update: 60
+  sha256: f3bc64e0a33d990c6612fbc9a3f33b48e29654dbf284ddb0e4b3a6640fed13df
+  checkpoint_format_version: 2
+  model_version_interpretation: explicit_legacy_separate_v1
+  role: frozen_seed0_mainline_reference
+
+computational_gap_reporting:
+  levels: [0.01, 0.02, 0.03, 0.05]
+  interpretation: computational_reporting_levels_not_teaching_quality_thresholds
+
+known_limitations:
+  teacher_only_positive_reoptimization_gain_count: 0
+  teacher_only_evaluated_count: 72
+  teacher_only_assignment_change_count: 0
+  interpretation: frozen_engineering_mainline_does_not_establish_complete_dual_actor_response
+
+stage6a_branch:
+  status: closed_failed_exploratory_branch_not_selected
+  includes: [A, B, C, D, E]
+  artifacts_read_only: true
+  symmetric_v2_model_selected_for_mainline: false
+  ranking_or_counterfactual_auxiliary_loss_selected_for_mainline: false
+  conclusion: branch_failure_does_not_mutate_the_stage6_mainline_freeze
+
+workflow:
+  stage7_batch_service_efficiency_unblocked: true
+  stage8_multiseed_unblocked_after_stage7_sequence: true
+  rerun_efficiency_if_model_architecture_changes: true
+
+evidence:
+  historical_candidate:
+    path: pa_moap_rl/configs/ppo_inference_freeze_candidate_four_topology_v2.yaml
+    sha256: b169a6cf6883038da604d1e8729372ea598c5b9261aaaab851922721d9d2fd45
+  source_run_metadata:
+    path: results/four_topology_b075_seed0_pilot_stabilization_run03/run_metadata.json
+    sha256: 6592bed28229d245f3c942e13c236ce5ad2841e88c29a25dc8701c5283e448e9
+  checkpoint_selection:
+    path: results/four_topology_b075_ppo_freeze_decision_v1/checkpoint_reevaluation_512_32/checkpoint_selection_diagnostic.json
+    sha256: 72bacafb7facc2727a342aaa6ba7b5c4fd3edddcf8fc9f8f6a1ad41e13a18fce
+  update60_controlled_response:
+    path: results/four_topology_b075_ppo_freeze_decision_v1/update60_response_512_32/candidate_response_summary.json
+    sha256: c94d9d229b40d9182a14d5bf812ad51383243aebc99f6b7689d08f20634d5530
+  failed_stage6a_branch:
+    path: results/four_topology_b075_pure_ppo_ranking_ablation_v1/controlled_cross_evaluation_v1/ranking_evaluation_summary.json
+    sha256: accafb2822fa7f0aeb060cb45ca8debd67ddefeee76be22326a587fcc0d75425

@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 
 from pa_moap_rl.data.instance_schema import AssignmentInstance
+from pa_moap_rl.objective import ObjectiveSpec
 from pa_moap_rl.utils.masks import build_action_mask
 from pa_moap_rl.utils.scoring import ScoreBreakdown, score_assignment
 
@@ -75,11 +76,12 @@ def evaluate_assignment(
     runtime: float = 0.0,
     initial_score: float | None = None,
     greedy_score: float | None = None,
+    objective: ObjectiveSpec | None = None,
 ) -> dict[str, Any]:
     """计算可行性、评分、运行时间和可选改进幅度指标。"""
 
     values = as_assignment_array(assignment)
-    score = score_assignment(values, instance=instance)
+    score = score_assignment(values, instance=instance, objective=objective)
     # 这里的字段名直接进入实验 CSV，改名会影响分析脚本。
     metrics: dict[str, Any] = {
         "solver_name": solver_name,
@@ -96,6 +98,14 @@ def evaluate_assignment(
         "diversity_violation": score.diversity_violation,
         "cap_violation": score.cap_violation,
         "runtime": float(runtime),
+        'objective_id': score.objective_id,
+        'objective_hash': score.objective_hash,
+        'effect_contribution': score.effect_contribution,
+        'student_contribution': score.student_contribution,
+        'teacher_contribution': score.teacher_contribution,
+        'global_contribution': score.global_contribution,
+        'entropy_penalty_contribution': score.entropy_penalty_contribution,
+        'cap_penalty_contribution': score.cap_penalty_contribution,
     }
     if initial_score is not None:
         metrics["improvement_over_initial"] = float(score.total_score - initial_score)
@@ -113,11 +123,12 @@ def make_solver_result(
     history: list[float] | None = None,
     initial_score: float | None = None,
     greedy_score: float | None = None,
+    objective: ObjectiveSpec | None = None,
 ) -> SolverResult:
     """根据最终 assignment 构造标准 `SolverResult`。"""
 
     values = as_assignment_array(assignment).copy()
-    score = score_assignment(values, instance=instance)
+    score = score_assignment(values, instance=instance, objective=objective)
     metrics = evaluate_assignment(
         instance,
         values,
@@ -125,6 +136,7 @@ def make_solver_result(
         runtime=runtime,
         initial_score=initial_score,
         greedy_score=greedy_score,
+        objective=objective,
     )
     return SolverResult(
         solver_name=solver_name,

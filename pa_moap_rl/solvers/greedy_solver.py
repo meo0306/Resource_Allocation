@@ -12,6 +12,7 @@ import time
 import numpy as np
 
 from pa_moap_rl.data.instance_schema import AssignmentInstance
+from pa_moap_rl.objective import ObjectiveSpec
 from pa_moap_rl.utils.metrics import SolverResult, make_solver_result
 from pa_moap_rl.utils.scoring import score_assignment
 
@@ -35,7 +36,7 @@ def effect_only_assignment(instance: AssignmentInstance) -> np.ndarray:
     return _argmax_feasible(instance.effect_matrix, instance.feasible_mask)
 
 
-def solve_effect_only_greedy(instance: AssignmentInstance) -> SolverResult:
+def solve_effect_only_greedy(instance: AssignmentInstance, *, objective: ObjectiveSpec | None = None) -> SolverResult:
     """只最大化局部理论效果的 baseline。"""
 
     start = time.perf_counter()
@@ -46,13 +47,18 @@ def solve_effect_only_greedy(instance: AssignmentInstance) -> SolverResult:
         instance=instance,
         assignment=assignment,
         runtime=runtime,
+        objective=objective,
     )
 
 
-def scalarized_independent_assignment(instance: AssignmentInstance) -> np.ndarray:
+def scalarized_independent_assignment(instance: AssignmentInstance, *, objective: ObjectiveSpec | None = None) -> np.ndarray:
     """在局部加权分数下为每个节点独立选择最优可行方法。"""
 
-    weights = instance.weights
+    weights = instance.weights if objective is None else {
+        'effect': objective.alpha_effect,
+        'student': objective.alpha_student,
+        'teacher': objective.alpha_teacher,
+    }
     # 此处不考虑 F_G 和软约束，因为它们依赖全局方法分布。
     local_scores = (
         float(weights["effect"]) * instance.effect_matrix
@@ -62,18 +68,19 @@ def scalarized_independent_assignment(instance: AssignmentInstance) -> np.ndarra
     return _argmax_feasible(local_scores, instance.feasible_mask)
 
 
-def solve_scalarized_independent_greedy(instance: AssignmentInstance) -> SolverResult:
+def solve_scalarized_independent_greedy(instance: AssignmentInstance, *, objective: ObjectiveSpec | None = None) -> SolverResult:
     """最大化局部加权效果/偏好的独立贪心 baseline。"""
 
     start = time.perf_counter()
-    assignment = scalarized_independent_assignment(instance)
+    assignment = scalarized_independent_assignment(instance, objective=objective)
     runtime = time.perf_counter() - start
     return make_solver_result(
         solver_name="scalarized_independent_greedy",
         instance=instance,
         assignment=assignment,
         runtime=runtime,
-        greedy_score=solve_effect_only_greedy(instance).score.total_score,
+        greedy_score=solve_effect_only_greedy(instance, objective=objective).score.total_score,
+        objective=objective,
     )
 
 
@@ -83,12 +90,13 @@ def one_point_greedy_improvement(
     *,
     max_iter: int | None = None,
     tolerance: float = 1.0e-12,
+    objective: ObjectiveSpec | None = None,
 ) -> SolverResult:
     """在完整目标 `J` 上反复执行收益最大的正向单点替换。"""
 
     start = time.perf_counter()
     assignment = (
-        scalarized_independent_assignment(instance)
+        scalarized_independent_assignment(instance, objective=objective)
         if initial_assignment is None
         else np.asarray(initial_assignment, dtype=np.int64).copy()
     )
@@ -97,7 +105,7 @@ def one_point_greedy_improvement(
     if np.any(~instance.feasible_mask[np.arange(instance.n), assignment]):
         raise ValueError("initial_assignment violates feasible_mask.")
 
-    current_score = score_assignment(assignment, instance=instance).total_score
+    current_score = score_assignment(assignment, instance=instance, objective=objective).total_score
     initial_score = current_score
     history = [current_score]
     iterations = 0
@@ -115,7 +123,7 @@ def one_point_greedy_improvement(
                     continue
                 candidate = assignment.copy()
                 candidate[i] = method
-                candidate_score = score_assignment(candidate, instance=instance).total_score
+                candidate_score = score_assignment(candidate, instance=instance, objective=objective).total_score
                 delta = candidate_score - current_score
                 if delta > best_delta + tolerance:
                     best_delta = delta
@@ -136,20 +144,21 @@ def one_point_greedy_improvement(
         runtime=runtime,
         history=history,
         initial_score=initial_score,
-        greedy_score=solve_effect_only_greedy(instance).score.total_score,
+        greedy_score=solve_effect_only_greedy(instance, objective=objective).score.total_score,
+        objective=objective,
     )
 
 
-def effect_only_greedy(instance: AssignmentInstance) -> SolverResult:
+def effect_only_greedy(instance: AssignmentInstance, *, objective: ObjectiveSpec | None = None) -> SolverResult:
     """`solve_effect_only_greedy` 的别名。"""
 
-    return solve_effect_only_greedy(instance)
+    return solve_effect_only_greedy(instance, objective=objective)
 
 
-def scalarized_independent_greedy(instance: AssignmentInstance) -> SolverResult:
+def scalarized_independent_greedy(instance: AssignmentInstance, *, objective: ObjectiveSpec | None = None) -> SolverResult:
     """`solve_scalarized_independent_greedy` 的别名。"""
 
-    return solve_scalarized_independent_greedy(instance)
+    return solve_scalarized_independent_greedy(instance, objective=objective)
 
 
 __all__ = [

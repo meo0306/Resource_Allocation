@@ -39,7 +39,7 @@ def _group_name_from_sm_path(sm_path: Path) -> str:
     return sm_path.parent.name
 
 
-def convert_pre_data(
+def convert_pre_data_flat(
     instance_root: str | Path,
     selection_root: str | Path,
     output_root: str | Path,
@@ -81,7 +81,7 @@ def convert_pre_data(
                 instance_name=instance.instance_name,
                 source_sm=str(sm_path),
                 source_csv=record.source_csv or "",
-                output_json=str(output_path),
+                output_json=str(output_path.relative_to(output_root)),
                 n=instance.n,
                 m=instance.m,
                 k=instance.k,
@@ -89,11 +89,11 @@ def convert_pre_data(
             )
         )
 
-    _write_manifests(output_root, converted)
+    _write_manifests_flat(output_root, converted)
     return converted
 
 
-def _write_manifests(output_root: Path, rows: list[ConvertedInstance]) -> None:
+def _write_manifests_flat(output_root: Path, rows: list[ConvertedInstance]) -> None:
     """分别写出 group 级 manifest 和根目录总 manifest。"""
 
     fieldnames = [
@@ -127,6 +127,103 @@ def _write_manifests(output_root: Path, rows: list[ConvertedInstance]) -> None:
         writer.writeheader()
         for row in rows:
             writer.writerow(row.__dict__)
+
+
+@dataclass(frozen=True)
+class ConvertedInstanceV2:
+    topology: str
+    input_topology: str
+    group: str
+    instance_uid: str
+    instance_name: str
+    source_sm: str
+    source_csv: str
+    output_json: str
+    n: int
+    m: int
+    k: int
+    selected_count: int
+
+
+def _write_manifests_v2(output_root: Path, rows: list[ConvertedInstanceV2]) -> None:
+    fieldnames = list(ConvertedInstanceV2.__dataclass_fields__)
+    grouped: dict[tuple[str, str], list[ConvertedInstanceV2]] = {}
+    for row in rows:
+        grouped.setdefault((row.topology, row.group), []).append(row)
+    for (topology, group), group_rows in grouped.items():
+        path = output_root / topology / group / 'manifest.csv'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('w', encoding='utf-8', newline='') as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(row.__dict__ for row in group_rows)
+    path = output_root / 'manifest.csv'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('w', encoding='utf-8', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(row.__dict__ for row in rows)
+
+
+def convert_pre_data(
+    instance_root: str | Path,
+    selection_root: str | Path,
+    output_root: str | Path,
+    overwrite: bool = False,
+) -> list[ConvertedInstanceV2]:
+    '''Convert topology-scoped source pairs without filename collisions.'''
+
+    from pa_moap_rl.data.loader import load_instance_json
+
+    instance_root = Path(instance_root)
+    output_root = Path(output_root)
+    config = load_config()
+    pairs = load_pre_data_pairs(instance_root, selection_root)
+    converted: list[ConvertedInstanceV2] = []
+    for sm_path, record in tqdm(pairs, desc='Converting assignment instances', unit='instance'):
+        input_topology = str((record.metadata or {}).get('input_topology', 'legacy'))
+        topology = str((record.metadata or {}).get('topology', input_topology))
+        group = _group_name_from_sm_path(sm_path)
+        stem = Path(record.instance_name).stem
+        uid = f'{topology}/{group}/{stem}'
+        output_path = output_root / topology / group / f'{stem}.assignment.json'
+        metadata = {
+            'source_csv': record.source_csv,
+            'source_row_type': record.row_type,
+            'selection_format': 'content_one_x_vector',
+            'topology': topology,
+            'input_topology': input_topology,
+            'group': group,
+            'instance_uid': uid,
+        }
+        if output_path.exists() and not overwrite:
+            instance = load_instance_json(output_path)
+        else:
+            instance = build_assignment_instance_from_files(
+                sm_path=sm_path,
+                selected_ids=record.selected_ids,
+                config=config,
+                metadata=metadata,
+            )
+            save_instance_json(instance, output_path)
+        converted.append(
+            ConvertedInstanceV2(
+                topology=topology,
+                input_topology=input_topology,
+                group=group,
+                instance_uid=uid,
+                instance_name=instance.instance_name,
+                source_sm=str(sm_path),
+                source_csv=record.source_csv or '',
+                output_json=str(output_path),
+                n=instance.n,
+                m=instance.m,
+                k=instance.k,
+                selected_count=len(record.selected_ids),
+            )
+        )
+    _write_manifests_v2(output_root, converted)
+    return converted
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
