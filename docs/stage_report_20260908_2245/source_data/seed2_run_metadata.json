@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "created_at_utc": "2026-09-07T11:22:59.550651+00:00",
+  "output_dir": "D:\\project\\Resource_Allocation\\results\\formal_joint_seed2_run01",
+  "resume_from": "D:\\project\\Resource_Allocation\\results\\formal_joint_seed2_run01\\checkpoints\\latest.pt",
+  "seed": 2,
+  "device": "cuda",
+  "cuda_available": true,
+  "cuda_device_name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "python_version": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "torch_version": "2.12.0+cu126",
+  "numpy_version": "2.4.4",
+  "hidden_dim": 64,
+  "ppo_config": {
+    "rollout_steps": 128,
+    "update_epochs": 4,
+    "minibatch_size": 64,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_epsilon": 0.2,
+    "value_coef": 0.5,
+    "entropy_coef": 0.01,
+    "learning_rate": 0.0003,
+    "max_grad_norm": 0.5,
+    "target_kl": null,
+    "total_updates": 1500,
+    "seed": 2,
+    "device": "cuda",
+    "env_max_steps": null,
+    "env_patience": null
+  },
+  "instances_per_update": 4,
+  "rollout_mode": "joint",
+  "advantage_normalization": "per_instance_then_pooled",
+  "training_batch_sampler": "size_group_content_unique_topology_diverse",
+  "eval_interval": 25,
+  "eval_limit": 90,
+  "checkpoint_interval": 25,
+  "tensorboard_dir": "D:\\project\\Resource_Allocation\\results\\formal_joint_seed2_run01\\tensorboard",
+  "inputs": {
+    "train_manifest": {
+      "path": "D:\\project\\Resource_Allocation\\data_processed\\splits\\train.csv",
+      "sha256": "294c6ebfe15f42631b248fd256880f3f8517547faf4769c9aa263f5ecce740fd"
+    },
+    "validation_manifest": {
+      "path": "D:\\project\\Resource_Allocation\\data_processed\\splits\\validation.csv",
+      "sha256": "a74259e7f6c0e08c544b000bad17be51da0928a619dc44a72979e8b4a29e4d1f"
+    },
+    "validation_scenarios": {
+      "path": "D:\\project\\Resource_Allocation\\data_processed\\splits\\scenarios\\validation_interpolation.json",
+      "sha256": "704f57d7f6fa58cc4fd6cd1baf5ad9e382d01baa82a1be8ebdb96d16099f70af"
+    }
+  },
+  "start_update": 1001,
+  "target_update": 1500
+}

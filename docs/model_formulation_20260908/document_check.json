@@ -1,0 +1,15 @@
+{
+  "source_file": "问题建模与Gurobi精确求解说明.tex",
+  "utf8_bytes": 37762,
+  "labels": 37,
+  "references": 11,
+  "environment_nesting": "passed",
+  "brace_balance": "passed",
+  "references_resolved": "passed",
+  "external_tex_dependencies": false,
+  "scheme_final_unchanged": true,
+  "scheme_final_sha256": "188fd1e7944fdedb7f151d053fd0eb6acc75c2c5bcaab18d6488d49540ac29e5",
+  "native_compiler": "failed before source diagnostics: Unable to find standard directories for platform",
+  "pdf_verified": false,
+  "note": "Static checks do not prove successful TeX compilation or layout quality."
+}

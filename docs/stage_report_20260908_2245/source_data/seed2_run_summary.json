@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "status": "completed",
+  "last_update": 1500,
+  "target_update": 1500,
+  "latest_validation_score": 0.661607040392547,
+  "best_validation_score": 0.6687550945120767,
+  "train_instance_rows": 6000,
+  "validation_instance_rows": 5400,
+  "training_elapsed_sec": 1314.8110148000123,
+  "completed_at_utc": "2026-09-07T11:44:54.871907+00:00"
+}

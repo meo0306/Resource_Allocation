@@ -1,0 +1,34 @@
+[
+  {
+    "path": "pa_moap_rl/utils/scoring.py",
+    "sha256": "5c06749afccb4fededb70f27a7e05ff82f163e7a20815fbae1ad27c3430bd461"
+  },
+  {
+    "path": "pa_moap_rl/data/build_assignment_instance.py",
+    "sha256": "88b72f999d33cc9e052c106ed1f15444c182e1a0d3f27d598ace5022cf718c03"
+  },
+  {
+    "path": "pa_moap_rl/solvers/gurobi_exact_solver.py",
+    "sha256": "ab65c125fcdaf1a8484e69700c10c8f3a60ad0e24cf803559af05d56250a0a16"
+  },
+  {
+    "path": "pa_moap_rl/experiments/compare_exact_hybrid.py",
+    "sha256": "8777d1bdfb217ec2779cbb1ea4e7e0236e4241588fc2040964dbfe1885c558b0"
+  },
+  {
+    "path": "pa_moap_rl/experiments/remeasure_gurobi_runtime.py",
+    "sha256": "6eeac4b062a8017970a23286908cc0e01b946c241b25733c067ebb1f747bdf7a"
+  },
+  {
+    "path": "results/exact_hybrid_validation_pilot/paired_results.jsonl",
+    "sha256": "e604d18e8f89f888190cf59630dbcb1deadc465ed8b879cdf6f3d0906a3c42ad"
+  },
+  {
+    "path": "data_processed/splits/scenarios/validation_interpolation.json",
+    "sha256": "704f57d7f6fa58cc4fd6cd1baf5ad9e382d01baa82a1be8ebdb96d16099f70af"
+  },
+  {
+    "path": "docs/exact_hybrid_experiment_guide.md",
+    "sha256": "0d6c39c0790063c425b95d14692d50314e97d988b629a07cc21276f532edf6d0"
+  }
+]

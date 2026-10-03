@@ -1,0 +1,49 @@
+{
+  "broken_links": [],
+  "figure_sets": 8,
+  "pdfs": [
+    {
+      "file": "figure_1_training_dynamics.pdf",
+      "pages": 1,
+      "text_characters": 572
+    },
+    {
+      "file": "figure_2_quality_speed_comparison.pdf",
+      "pages": 1,
+      "text_characters": 467
+    },
+    {
+      "file": "figure_3_generalization_by_topology.pdf",
+      "pages": 1,
+      "text_characters": 270
+    },
+    {
+      "file": "figure_4_dataset.pdf",
+      "pages": 1,
+      "text_characters": 369
+    },
+    {
+      "file": "figure_5_training_diagnostics.pdf",
+      "pages": 1,
+      "text_characters": 436
+    },
+    {
+      "file": "figure_6_exact_hybrid.pdf",
+      "pages": 1,
+      "text_characters": 300
+    },
+    {
+      "file": "figure_7_scale_diagnostic.pdf",
+      "pages": 1,
+      "text_characters": 215
+    },
+    {
+      "file": "figure_8_case_distribution.pdf",
+      "pages": 1,
+      "text_characters": 160
+    }
+  ],
+  "original_scheme_unchanged": true,
+  "csv_count": 37,
+  "files": 83
+}

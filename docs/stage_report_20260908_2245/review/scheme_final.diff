@@ -1,0 +1,578 @@
+--- docs/scheme_final.md (current)
++++ docs/scheme_final.md (proposed as of 2026-09-08 22:45)
+@@ -1,4 +1,8 @@
+-核心问题是“为已选择知识点分配教学方法”，并采用 PA-MOAP、启发式初解、Actor-Critic/PPO 的技术路线
++# 教学方法分配方案与阶段实施状态
++
++> 状态截止：2026 年 9 月 8 日 22:45（北京时间）。本文件记录五拓扑历史版本的模型、实现和阶段结果；不纳入截止时点以后的四拓扑重构与新目标实验。整理于 2026 年 9 月 27 日。
++
++核心问题是“为已选择知识点分配教学方法”，采用 PA-MOAP、Effect-only greedy 初解与共享 Masked PPO 局部改进。已完成算例处理、数据集划分、参数筛选、三种子训练、基线对比及 Gurobi/混合精炼验证 pilot。当前结论为阶段性计算实验结果，尚不意味着教学效果验证和方法优势论证全部完成。
+ 
+ # 1. 教学属性空间与模型参数构造
+ 
+@@ -108,7 +112,7 @@
+ 
+ ## 2.1. 问题描述
+ 
+-教学方法分配任务以前置资源组合阶段输出的已选知识点集合为输入。前置阶段已经完成知识点筛选，并保证所选知识点集合满足先修约束和资源约束。因此，本阶段不再重复考虑教学时长、认知负荷和外部资源供给等资源容量约束，而是在已选知识点集合上进一步决定每个知识点应采用的教学方法。
++教学方法分配任务以前置资源组合阶段输出的已选知识点集合为输入。本阶段接收前置阶段的知识点筛选结果，并以前置结果满足其先修约束和资源约束为输入前提；本阶段转换程序不重新证明前置优化结果的可行性。因此，本阶段不再重复考虑教学时长、认知负荷和外部资源供给等资源容量约束，而是在已选知识点集合上进一步决定每个知识点应采用的教学方法。
+ 
+ 该问题的核心决策是：对于每个已选知识点 $i$，从候选教学方法集合中选择一种方法 $m$，使整体分配方案同时具有较高的理论教学效果、学生偏好满足度、教师偏好满足度以及全局方法分布合理性，并避免方法使用过度单一或过度集中。
+ 
+@@ -212,7 +216,7 @@
+ 
+ 该项表示当匹配对的综合认知负荷不超过主体承受能力时不产生扣分；当综合认知负荷超过主体承受能力时，按照超出部分降低兼容度。
+ 
+-（3）对任一主体 $b\mathcal{\in B}$，定义局部偏好偏好得分：
++（3）对任一主体 $b\mathcal{\in B}$，定义局部偏好得分：
+ 
+ $$P_{im}^{b} = clip\left( \alpha_{b}\Phi_{im}^{b} + (1 - \alpha_{b})\Psi_{im}^{b},0,1 \right)$$
+ 
+@@ -371,41 +375,25 @@
+ 
+ 该条件属于实例有效性条件，而非优化决策约束。
+ 
+-## 2.9. 多目标优化模型
+-
+-综合上述目标与软约束，教学方法分配问题可表述为如下偏好感知的多目标分配优化模型：
+-
+-$$\underset{y}{\max}\mathbf{F}(x) = \left( F_{E}(x),F_{S}(x),F_{T}(x),F_{G}(y),F_{H}(x),{- V}_{C}(y) \right)$$
+-
+-s.t.
+-
+-$$\sum_{m\mathcal{\in M}}^{}x_{im} = 1,\forall i\mathcal{\in I}$$
+-
+-$$x_{im} \leq \Gamma_{im},\forall i\mathcal{\in I,}\ m\mathcal{\in M}$$
+-
+-$$x_{im} \in \{ 0,1\},\forall i\mathcal{\in I,}\ m\mathcal{\in M}$$
+-
+-由于上述目标之间可能存在冲突，本问题通常不存在一个同时使所有目标达到最优的单一解。
+-
+-首先，教学效果目标 $F_{E}(x)$主要反映基于知识点类别和教学方法理论适配关系的规范性评价，而学生偏好目标 $F_{S}(x)$与教师偏好目标 $F_{T}(x)$则反映不同主体的个性化需求，三者可能在局部知识点—方法匹配上产生冲突。其次，$F_{E}(x)$、$F_{S}(x)$ 和 $F_{T}(x)$均为局部加和目标，而 $F_{G}(x)$、$F_{H}(x)$ 和 $F_{C}(x)$依赖整体方法分布，体现跨知识点的全局组合结构要求。因此，逐点选择局部得分最高的方法并不一定能得到全局上合理的教学方法分配方案。
+-
+-虽然理论模型采用多目标形式，但在启发式搜索或强化学习求解过程中，仍需要将多目标向量转化为可比较的标量评价值。因此，工程实现阶段采用加权标量化形式：
+-
+-$$J(x;\mathbf{w}) = w_{E}F_{E}(x) + w_{S}F_{S}(x) + w_{T}F_{T}(x) + w_{G}F_{G}(x) + w_{H}F_{H}(x) + w_{C}F_{C}(x)$$
+-
+-其中：
+-
+-$$w_{E},w_{S},w_{T},w_{G},w_{H},w_{C} \geq 0$$
+-
+-并可设置：
+-
+-$$w_{E} + w_{S} + w_{T} + w_{G} + w_{H} + w_{C} = 1$$
+-
+-强化学习环境中的即时奖励可定义为标量化目标的增量：
+-
+-$$r_{t} = J(y_{t + 1};\mathbf{w}) - J(y_{t};\mathbf{w})$$
+-
+-这样处理后，模型层面保留多目标优化问题的本质，算法层面则通过不同权重设置获得不同偏好下的折中解。
++## 2.9. 多目标表达与实际标量目标
++
++用分配矩阵 $x$ 统一记号。模型同时考虑教学效果、学生偏好、教师偏好、全局方法分布和软违反：
++
++$$\max_x\left(F_E(x),F_S(x),F_T(x),F_G(x),-V_{\mathrm{soft}}(x)\right).$$
++
++约束为 $\sum_m x_{im}=1$、$x_{im}\le\Gamma_{im}$、$x_{im}\in\{0,1\}$。局部目标可逐点计算，全局分布项与软惩罚依赖整体方法使用比例，因此逐点局部最优不等于完整目标最优。
++
++截至本版实际训练与比较均使用固定加权标量化，未求取完整 Pareto 前沿：
++
++$$J(x)=0.30F_E(x)+0.25F_S(x)+0.25F_T(x)+0.10F_G(x)-0.10V_{\mathrm{soft}}(x).$$
++
++其中 $V_{\mathrm{soft}}=V_{\mathrm{div}}+V_{\mathrm{cap}}$，$H_{\min}=0.55$、方法占比阈值均为 0.35。正向项权重合计 0.90，不能将 J 直接解释为百分制成绩或相对全局最优的比例。
++
++参考方法分布固定为：
++
++$$\rho=(0.18,0.12,0.10,0.10,0.10,0.08,0.08,0.08,0.05,0.05,0.06).$$
++
++即时奖励为 $r_t=J(x_{t+1})-J(x_t)$。Effect-only 初解不构成 $F_E$ 下限约束，后续优化可以用效果分项的下降换取其他分项收益。当前方案不属于词典序优化，也未验证任意新权重或新目标分布下无需重训的适应能力。评分依据为规则参数与合成画像，不等同于实测教学效果。
+ 
+ # 3. RL 设计
+ 
+@@ -491,7 +479,7 @@
+ 
+ ## 3.4. 终止条件
+ 
+-动作步数达到上限 $T_{\max}$ 或连续若干步有超过历史最好值时当前回合结束，即：
++动作步数达到上限 $T_{\max}$，或连续若干步未超过历史最好值时，当前回合结束。正式推理使用 max_steps=128、patience=32，最终返回 best-so-far 解，即：
+ 
+ ```python
+ if new_score > best_score + eps:
+@@ -789,6 +777,24 @@
+ ### 3.5.5. 训练框架：Actor-Critic
+ 
+ ### 3.5.6. 策略更新：PPO
++
++采用 GAE 与 clipped PPO。正式训练使用多环境同步采样与联合更新：每次选择同规模桶中 4 个不同实例，尽量覆盖不同拓扑；每环境采样 128 步，分别计算并标准化 GAE，合并 512 条 transition 后更新。不同节点数通过 padding 和 node mask 处理。
++
++| 参数 | 五拓扑正式训练值 |
++|---|---:|
++| rollout mode / instances per update | joint / 4 |
++| rollout steps / minibatch | 128 / 64 |
++| PPO epochs / learning rate | 4 / 3e-4 |
++| entropy coefficient / hidden dimension | 0.01 / 64 |
++| gamma / GAE lambda | 0.99 / 0.95 |
++| clip epsilon / value coefficient | 0.20 / 0.50 |
++| max grad norm / target KL | 0.50 / 关闭 |
++| 训练种子 / 每种子更新数 | 0、1、2 / 1500 |
++| 验证频率 / 固定样本数 | 每 25 updates / 90 |
++
++训练随机采样动作，评估采用确定性动作选择。rollout 可跨环境回合，update 不能直接等同于 episode。best.pt 按固定验证分数保存，用于部署和比较；latest.pt 保存完整恢复状态。TensorBoard、CSV、checkpoint 索引和运行元数据共同记录训练过程。
++
++网络为节点/方法/全局 MLP 编码与候选动作打分，当前不直接编码原始网络邻接关系；不同拓扑实验反映内容结构与属性分布差异，不等同于对未见图拓扑类型的泛化。
+ 
+ # 4. 算例构造
+ 
+@@ -827,7 +833,7 @@
+ 
+ 3. 构造节点原始属性和方法原始属性
+ 
+-4. 构造学生/教师画像（固定、单一配置，后续实验考虑设置多组画像）
++4. 构造学生/教师场景：训练从六类学生模板与六类教师模板的 30 个允许组合中在线采样并连续扰动，评估使用固定场景库；另有 6 个组合仅用于 held-out 测试。
+ 
+ 5. 构造 $E_{im}$
+ 
+@@ -845,309 +851,137 @@
+ 
+ 8. 构造 target_distribution
+ 
+-# 5. 代码实现
+-
+-## 5.1. 项目结构
+-
+-pa_moap_rl/
+-
+-configs/
+-
+-default.yaml
+-
+-method_config.yaml
+-
+-profile_config.yaml
+-
+-docs/
+-
+-model_definition.md
+-
+-data/
+-
+-parse_sm.py
+-
+-selection_loader.py
+-
+-from_content_selection.py
+-
+-build_assignment_instance.py
+-
+-instance_schema.py
+-
+-envs/
+-
+-method_assignment_env.py
+-
+-models/
+-
+-encoders.py
+-
+-actor_critic.py
+-
+-solvers/
+-
+-random_solver.py
+-
+-greedy_solver.py
+-
+-local_search_solver.py
+-
+-ppo_solver.py
+-
+-utils/
+-
+-scoring.py
+-
+-masks.py
+-
+-metrics.py
+-
+-seed.py
+-
+-logger.py
+-
+-io.py
+-
+-experiments/
+-
+-train_ppo.py
+-
+-run_batch.py
+-
+-run_ablation.py
+-
+-analyze_results.py
+-
+-tests/
+-
+-test_parse_sm.py
+-
+-test_instance_builder.py
+-
+-test_scoring.py
+-
+-test_masks.py
+-
+-test_env.py
+-
+-test_encoders.py
+-
+-test_actor_critic.py
+-
+-results/
+-
+-figures/
+-
+-tables/
+-
+-## 5.2. 具体程序文件实现
+-
+-各脚本基本功能/职责如下：
+-
+-| **文件**                       | **职责**                                                                   |
+-|--------------------------------|----------------------------------------------------------------------------|
+-| instance_schema.py             | 定义 instance 字段、shape、合法范围                                        |
+-| method_assignment_generator.py | 生成内容二专用算例                                                         |
+-| from_content_selection.py      | 从内容一输出的 selected concepts 构造内容二输入                            |
+-| loader.py                      | 读写 JSON/NPZ/YAML 格式 instance                                           |
+-| method_assignment_env.py       | 封装 reset/step/action_mask/reward/done/best-so-far成类似 Gymnasium 的环境 |
+-| encoders.py                    | 节点、方法、pair feature 编码模块                                          |
+-| actor_critic.py                | PPO 用 Actor-Critic 网络                                                   |
+-| scoring.py                     | 计算 (F_E,F_S,F_T,F_G,J)                                                   |
+-| masks.py                       | 生成 feasible mask 和 action mask                                          |
+-| metrics.py                     | 计算实验指标                                                               |
+-| random_solver.py               | 随机合法 baseline，做对比算法                                              |
+-| greedy_solver.py               | 见后文，做对比算法                                                         |
+-| local_search_solver.py         | 见后文，做对比算法                                                         |
+-| ppo_solver.py                  | masked PPO，本研究核心贡献算法                                             |
+-| run_batch.py                   | 批量生成实例、运行算法、保存结果                                           |
+-| run_ablation.py                | 权重、全局项、初解方式等消融                                               |
+-| analyze_results.py             | 汇总 csv，画图和表格                                                       |
+-
+-### 5.2.1. greedy_solver.py——做对比算法
+-
+-实现：
+-
+-effect-only greedy：仅考虑理论匹配度 $E$
+-
+-scalarized independent greedy：不考虑全局偏好
+-
+-scalarized one-point greedy improvement：考虑所有偏好，从一个初解出发，每次选择使总目标增量最大的单点替换：$(i^{*},m^{*}) = \arg\max_{i,m}\Delta J(i,m)$。如果 $\Delta J(i^{*},m^{*}) > 0$，执行替换；否则停止。
+-
+-### 5.2.2. env.py
+-
+-将分配等交互过程封装成
+-
+-obs = env.reset(instance)
+-
+-obs, reward, done, info = env.step(action)
+-
+-### 5.2.3. local_search_solver.py
+-
+-best-improvement one-point local search
+-
+-first-improvement one-point local search
+-
+-random restart local search
+-
+-### 5.2.4. ppo_solver.py
+-
+-实现 masked PPO
+-
+-# 6. 实验设计
+-
+-## 6.1. 指标
+-
+-| **类别** | **指标**                 | **含义**                                 |
+-|----------|--------------------------|------------------------------------------|
+-| 可行性   | hard_feasible_rate       | 输出方案是否满足硬约束                   |
+-|          | mask_violation_count     | 是否选择了被 mask 禁止的方法             |
+-|          | valid_action_ratio       | 每个状态下可行动作比例，辅助判断问题难度 |
+-| 目标函数 | total_score              | 总目标 (J(x))                            |
+-|          | effect_score             | 教学效果匹配 (F_E(x))                    |
+-|          | student_pref_score       | 学生偏好满足 (F_S(x))                    |
+-|          | teacher_pref_score       | 教师偏好满足 (F_T(x))                    |
+-|          | global_score             | 全局分布偏好满足 (F_G(x))                |
+-|          | soft_penalty             | 软约束违反惩罚                           |
+-| 优化过程 | improvement_over_initial | 相比启发式初解提升多少                   |
+-|          | improvement_over_greedy  | 相比 greedy 提升多少                     |
+-|          | steps_to_best            | 多少步找到 best-so-far                   |
+-|          | episode_return           | PPO episode 累计 reward                  |
+-|          | runtime                  | 运行时间                                 |
+-
+-## 6.2. 对比 baseline
+-
+-Random legal
+-
+-Effect-only greedy
+-
+-Scalarized greedy
+-
+-Local search
+-
+-PPO local improvement
+-
+-## 6.3. 消融
+-
+-建议三组：
+-
+-**无偏好 vs 有偏好：**证明偏好项确实改变了分配结果。
+-
+-**无全局分布项 vs 有全局分布项：**证明加入全局偏好后，问题不再是简单逐点贪婪。
+-
+-**启发式初解 vs 随机初解：**支撑你的“启发式引导”设计。
+-
+-## 6.4. 需要的结果图
+-
+-1. PPO training reward curve
+-
+-2. 不同方法的 total score 对比柱状图
+-
+-3. effect score 与 preference score 的 trade-off 散点图
+-
+-4. 方法使用比例与目标分布的对比图
+-
+-# 7. 时间计划
+-
+-| **时间** | **任务**                       | **具体 list**                                                                                                                                                                                                                                                        | **输出文件/脚本**                                                                  | **备注 / 验收要点**                                                                                                                                             |
+-|----------|--------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+-| Day 1    | 冻结优化模型与符号体系         | 明确已选知识点集合 (\mathcal I)、候选方法集合 (\mathcal M)、类别集合 (\mathcal C)；统一使用 (y\_{im}) 作为分配变量；区分 feasible mask (\Gamma\_{im}) 与 action mask (\Omega\_{im})；整理目标函数 (J(y))、软约束 (V\_{\mathrm{soft}}(y))                             | docs/model_definition.md                                                           | 这一版作为后续代码实现的唯一数学依据；避免后续脚本中出现 (x_i)、(S)、(A\_{im}) 等易混符号                                                                       |
+-| Day 2    | 固定配置文件                   | 写入 6 类知识点类别；写入 11 类教学方法；写入类别原型矩阵 (\mathbf D^C)；写入方法属性矩阵 (\mathbf R)；写入方法—类别教学效果矩阵 (\mathbf A^E)；写入默认学生画像 (\boldsymbol\theta^{stu})、教师画像 (\boldsymbol\theta^{tea})、目标分布 (\boldsymbol\rho)、权重参数 | configs/default.yaml；configs/method_config.yaml；configs/profile_config.yaml      | 配置文件中必须保证所有矩阵 shape 一致：(\mathbf D^C:[K_c,5])，(\mathbf R:[M,6])，(\mathbf A^E:[M,K_c])                                                    |
+-| Day 3    | 实现 .sm 算例解析器            | 解析原始算例文件；读取节点编号、类别、CognitiveLoad；必要时保留原节点 ID 与重新编码 ID 的映射；暂不使用 Importance、Timeliness、Measurability、TeachingTime、ExternalResourceDemand                                                                                  | data/parse_sm.py；tests/test_parse_sm.py                                           | 验收：输入 .sm 后能输出 category_id: [V]、cognitive_load: [V]、id_mapping                                                                                   |
+-| Day 4    | 对接前置资源组合结果           | 读取内容一算法输出的 selected_ids 或 x_star；从完整 .sm 中抽取已选知识点；将原节点编号重新映射为 (0,\dots,n-1)；保存 source instance 信息                                                                                                                            | data/from_content_selection.py；data/selection_loader.py                           | 若暂时没有标准化内容一输出文件，可先支持 JSON 格式 {"selected_ids":[...]}；后续再接 CAMGA 输出                                                                |
+-| Day 5    | 构造内容二 assignment instance | 根据 (c_i,q_i) 构造知识点需求向量 (\mathbf u_i)；根据 (\mathbf A^E) 构造 effect_matrix；根据偏好函数构造 student_pref、teacher_pref；构造 feasible_mask 与 target_distribution                                                                                       | data/build_assignment_instance.py；data/instance_schema.py                         | 输出字段应与当前方案一致：category_id、cognitive_load、concept_need、method_attr、effect_matrix、student_pref、teacher_pref、feasible_mask、target_distribution |
+-| Day 6    | 实现评分函数                   | 实现 (F_E(y))、(F_S(y))、(F_T(y))、(F_G(y))、(H(y))、(V\_{\mathrm{div}}(y))、(V\_{\mathrm{cap}}(y))、(V\_{\mathrm{soft}}(y))、(J(y))；实现单点替换后的 delta score 计算                                                                                              | utils/scoring.py；tests/test_scoring.py                                            | 验收：所有得分在合理范围；同一 assignment 重复计算一致；单点替换的 delta 与重算结果一致                                                                         |
+-| Day 7    | 实现 mask 与合法动作逻辑       | 实现 feasible mask (\Gamma\_{im})；实现动态 action mask (\Omega\_{im})；支持单 instance 和 batch 两种形式；处理当前方法不可重复选择，即 (m\ne a_i)                                                                                                                   | utils/masks.py；tests/test_masks.py                                                | 明确：feasible_mask 是静态方法可行性掩码；action_mask 是动态动作掩码；二者不能混用                                                                              |
+-| Day 8    | 封装 RL 环境                   | 实现 reset()、step(action)、get_action_mask()、compute_reward()、done 判断、best-so-far 记录；reward 定义为 (J(y\_{t+1})-J(y_t))                                                                                                                                     | envs/method_assignment_env.py；tests/test_env.py                                   | 验收：非法动作不能执行；执行合法动作后 assignment、method distribution、current scores 同步更新                                                                 |
+-| Day 9    | 实现 baseline                  | 实现 Random legal；Effect-only greedy；Scalarized independent greedy；One-point greedy improvement；Local search                                                                                                                                                     | solvers/random_solver.py；solvers/greedy_solver.py；solvers/local_search_solver.py | baseline 是后续证明问题非平凡性和 PPO 改进效果的基础，优先级高于复杂网络调参                                                                                    |
+-| Day 10   | 实现网络编码模块               | 实现 Category Embedding、Method ID Embedding、Node Encoder、Method Encoder、Global Encoder、Pair Feature Builder；统一输入输出 shape                                                                                                                                 | models/encoders.py；tests/test_encoders.py                                         | 验收：输入 batch 后输出 h:[B,N_max,H]、\mu:[B,M,H]、g:[B,H]、\xi:[B,N_max,M,3H+9]                                                               |
+-| Day 11   | 实现 Actor-Critic              | 实现 Actor Head 输出 action_logits:[B,N_max,M]；应用 action mask；实现 Critic Head 输出 state_value:[B,1]；检查 flatten 后动作索引与 ((i,m)) 的映射                                                                                                              | models/actor_critic.py；tests/test_actor_critic.py                                 | 先保证前向传播、mask、采样、log_prob、entropy 全部正确，再接 PPO                                                                                                |
+-| Day 12   | 跑通 masked PPO 最小闭环       | 实现 rollout buffer、GAE、clipped policy loss、value loss、entropy bonus、参数更新；先在小规模固定 instance 上训练                                                                                                                                                   | solvers/ppo_solver.py；experiments/train_ppo.py                                    | 验收目标不是立刻超过所有 baseline，而是训练过程稳定、reward 不爆炸、非法动作率为 0                                                                              |
+-| Day 13   | 批量实验与消融                 | 批量生成 assignment instances；运行 baseline 和 PPO；做无偏好/有偏好、无全局项/有全局项、启发式初解/随机初解消融；保存所有结果                                                                                                                                       | experiments/run_batch.py；experiments/run_ablation.py；results/\*.csv              | 建议规模先取 (n=20,50,100)，每组若时间允许跑多 seed；优先保证结果表完整                                                                                         |
+-| Day 14   | 结果分析与汇报材料整理         | 汇总 total score、effect score、student/teacher preference score、global score、soft penalty、runtime、improvement；绘制训练曲线、baseline 对比图、方法分布图、case table；整理当前问题与下一步                                                                      | experiments/analyze_results.py；figures/\*.png；tables/\*.csv；slides_or_report.md | 汇报主线：内容一输出如何进入内容二 → 偏好函数如何构造 → 非加性全局项为何必要 → baseline 与 PPO 初步结果                                                         |
+-
+-# 8. 结果
+-
+-## 8.1. 预期成果
+-
+-第一版（当前）：效用函数偏好 + 全局分布偏好 + 启发式初始化 + masked PPO
+-
+-把教学方法分配问题从概念建模推进到可运行的优化环境，完成了偏好评分函数、全局分布偏好、启发式初解、baseline 和 PPO 局部改进框架的初步实现，并通过合成算例验证了偏好项会改变分配结果，RL 框架可以在非加性全局偏好下进行方案改进。
+-
+-## 8.2. 后续可能做的在第一版基础上的改进
+-
+-### 8.2.1. 动作空间
+-
+-①两点交换swap
+-
+-在不改变方法使用总量的情况下调整分配结构，尤其是引入了全局分布/多样性要求的情况下
+-
+-作用：改善 credit assignment，提供略强的跳出局部最优能力，改变搜索的邻域几何结构
+-
+-②top-K重采样：选一小组知识点重新用 greedy/prob 选方法
+-
+-③方法整体迁移（method reassignment）：把某一类知识点全部换方法，对应“教学策略调整”
+-
+-### 8.2.2. 偏好
+-
+-用 PbRL / 主动学习 / 贝叶斯偏好模型替换手工偏好函数
+-
+-# 9. Motivation 相关
+-
+-## 9.1. 优化目标冲突
+-
+-### 9.1.1. 两个目标之间是否真的存在结构性冲突
+-
+-两类目标在决策空间中呈现“局部冲突、全局相关”的特征，使得简单加权难以稳定获得高质量解。
+-
+-| **结构性冲突来源** | **解释** |
+-|--------------------|----------|
+-| 认知收益 vs 使用成本 | 高匹配度方法：可能认知负荷高（如探究式学习）；偏好方法：可能更轻松（如讲授） |
+-| 全局 vs 局部 | 匹配度：逐点最优；偏好：可能有“组合结构”（例如希望方法多样性） |
+-| 规范性目标 vs 主观性目标 | 匹配度：基于理论/经验规则（normative）；偏好：个体差异（subjective） |
+-
+-### 9.1.2. 为什么采用“先匹配度 → 再偏好”的分阶段策略【Two-stage preference-aware optimization】是合理的
+-
+-（1）可行性与搜索空间角度
+-
+-- 当前组合优化问题解空间巨大，如果直接优化偏好，preference 是 weak signal（偏好函数不稳定、甚至是噪声；RL early stage exploration 很差；容易学到低质量但高偏好解。）
+-
+-- Feasible-region restriction + preference optimization：匹配度 $F_{1}$：是**强结构信息**，提供**搜索空间的“骨架”，**先用 $F_{1}$把搜索空间收缩到“合理区域”，再在这个子空间内优化 $F_{2}$。
+-
+-
+-（2）学习稳定性角度
+-
+-初始解足够好，RL 做改进：将问题从“全局构造”转化为“局部改进”，显著降低 RL 训练难度；如果交换顺序：reward signal 噪声大、policy gradient 方差高、容易 collapse。
+-
+-（3）认知与实际应用角度
+-
+-在实际教学设计中，教学方法首先需满足基本的教学适配原则，其次才在可行范围内调整以满足个性化偏好。
+-
+-（4）易扩展，可以插入学习偏好模型
+-
+-### 9.1.3. 这种顺序 vs 其他处理方式（加权、同时优化、先偏好等）在方法论上的差异与优劣
+-
+-加权单目标：权重确定，鲁棒性（偏好变化权重失效）
+-
+-多目标优化：得到 Pareto 前沿还需要决策
+-
+-交换顺序/纯RL/混合：容易产生认知不合理方案、偏好信号不可靠（特别是冷启动）、RL exploration 质量差
+-
+-### 9.1.4. 理论支撑（硬蹭）
+-
+-Lexicographic optimization 词典序优化~近似实现
+-
+-Constrained reinforcement learning
+-
+-### 9.1.5. 论文可用文字描述
+-
+-本研究将偏好优化问题从全局搜索转化为受约束的局部改进问题，从而在保证教学合理性的前提下实现偏好驱动的个性化优化。
+-
+-| **角度/核心逻辑** | **描述** |
+-|------------------|----------|
+-| 问题本质 | 教学方法分配需要同时满足：基于知识结构的理论适配性；面向个体差异的偏好满足 |
+-| 挑战 | 两类目标在局部决策层面存在冲突，同时偏好信息具有不完备性与不稳定性，使得直接联合优化困难。 |
+-| 现有方法不足 | 加权方法：依赖权重，鲁棒性差；多目标方法：难以决策；纯RL：搜索空间大、训练不稳定 |
+-| 我的核心思想 | 将问题分解为：“先保证合理性，再优化个性化” |
+-| 方法本质 | 在高匹配度子空间中进行偏好优化 |
++## 4.3. 五拓扑数据集与泄漏控制
++
++原始数据含 uniform、random、hourglass、bottleneck、staircase 五类拓扑，每类九档规模、每档 100 个实例，总计 4500。原始 V=60–1000；经内容选择后的实际 N=37–775。manual_bottleneck 只作为输入目录名，元数据规范为 bottleneck。以 topology/group/instance 分层输出，防止同名覆盖。
++
++按 group 与原始随机种子形成底层身份，使用 seed20260906 作 70/15/15 划分，五拓扑变体同属一组：训练3150、验证675、测试675，对应底层身份630/135/135。每拓扑—规模单元为70/15/15。
++
++学生/教师模板各6类；留出组合为 S1–T4、S2–T5、S3–T6、S4–T1、S5–T2、S6–T3。扰动标准差0.05，最大绝对扰动0.10，画像裁剪到[0.05,0.95]。固定验证插值库30个场景，测试插值库60个，测试留出库30个。按实例索引循环配对；每套测试含675个配对样本，而非内容与全部场景的笛卡尔积。
++
++实例 JSON 的类别、需求和偏好矩阵保留来源与原始ID。当前4500个实例的静态可用性掩码均为全真，动态掩码仍排除原方法和padding；复杂禁用关系下的鲁棒性尚未在本批主实验中检验。
++
++# 5. 已实现的程序与流程
++
++| 文件或目录 | 截止时点的作用 |
++|---|---|
++| data/parse_sm.py、selection_loader.py | 原始属性解析与内容选择结果接入 |
++| data/build_assignment_instance.py、convert_pre_data.py | assignment实例与manifest构造 |
++| data/build_dataset.py、scenarios.py | 内容划分、偏好场景采样与固定场景库 |
++| utils/scoring.py、masks.py | 统一目标分项、软惩罚和动作掩码 |
++| envs/method_assignment_env.py | 单点替换、ΔJ奖励、终止与best-so-far |
++| models/encoders.py、actor_critic.py | 共享编码、Masked Actor–Critic |
++| solvers/ppo_solver.py | rollout、GAE、PPO更新与策略求解 |
++| experiments/formal_training.py | 联合训练、固定验证、日志和checkpoint |
++| experiments/select_ppo_candidates.py、freeze_ppo_parameters.py | 受控参数比较和多种子冻结门槛 |
++| experiments/evaluate_checkpoint.py、summarize_multiseed_evaluation.py | 冻结后测试及跨种子统计 |
++| solvers/greedy_solver.py、local_search_solver.py | 构造式基线与增量单点局部搜索 |
++| solvers/one_point_local_search.py | 现有单点最优改进搜索的规范别名，不是新增算法 |
++| solvers/gurobi_exact_solver.py、hybrid_solver.py | 精确/有界参照与PPO后短程精炼 |
++| experiments/compare_exact_hybrid.py、remeasure_gurobi_runtime.py | validation pilot与Gurobi计时补正 |
++| experiments/prepare_publication_results.py | 既有图件、结果表与源数据整理 |
++
++表内代码入口相对 pa_moap_rl。当前工作区代码已有截止日期以后的变更，本表仅记录当时已存在的模块职责；历史参数以run_metadata和当时实验文件为准，不直接采用今天CLI默认值重新解释旧实验。
++
++# 6. 已执行的比较与评价协议
++
++## 6.1. 五算法测试
++
++主表包含随机可行、Effect-only greedy、标量独立贪婪、单点最优改进局部搜索与Masked PPO。标量贪婪仅最大化局部0.30E+0.25P_S+0.25P_T；局部搜索从该初解出发优化完整J，默认最多N×M次接受迭代，无正收益单点替换即停止。PPO从Effect-only初解出发，采用验证选出的seed1/update1450。
++
++参数冻结后，interpolation和held-out各评价675个相同实例—场景样本；三种子PPO也严格配对。随机重启和first-improvement不是主表中的独立算法。评价包括J、各分项、软惩罚、硬可行率、非法动作和运行时间。不同初解和不同计算预算构成完整求解流程比较，尚不是公平控制初解的算法消融。
++
++## 6.2. 精确求解和混合精炼
++
++固定抽取5拓扑×9规模中的中位N验证实例，共45个，N=40–736。Gurobi首轮120秒，仅未证最优且gap>1%时追加600秒。混合方法在PPO解上追加4/8/16/32次接受的单点改进。Gurobi用整数方法计数的PWL表达熵，并由项目评分器重算结果；未证最优时应报告上下界，不能把incumbent称作全局最优。
++
++混合预算仅用validation选择：恢复至少50%的PPO—完整局部搜索差距、总时间不超过局部搜索20%，选择满足条件的最小预算。本次无候选同时达标。
++
++## 6.3. 统计与时间口径
++
++训练结果报告三种子，部署模型只按validation选。跨种子SD使用ddof=0；历史bootstrap区间按实例重采样，未校正底层身份和重复场景的依赖，不等同于教学效果证据。
++
++Gurobi初版只记录optimize时间，晚间已补测构建加求解调用时间；使用fair_runtime修正版。该计时仍不含共享实例读取/场景构造，不是完整服务时延。五算法675例测试与45例pilot的时间必须分别报告。PPO推理不包含训练和模型加载成本，不宣称对所有算法有速度优势。
++
++## 6.4. 未完成的验证
++
++偏好输入、全局分布项和初解机制的正式公平消融；权重及目标分布变化的泛化；动态偏好变化后的最小调整；批量服务吞吐和训练摊销；真实教学效果验证。已有脚本入口不等于相关实验完成。
++
++# 7. 阶段进展与训练结果
++
++已完成数据工程、联合采样实现与受控比较、参数搜索、多种子长程训练、冻结后测试和精确求解pilot。取消早期Day1–Day14排期的“待执行”表述，用已有证据记录实际进度。
++
++joint对比sequential的历史100-update受控试验中，吞吐约为2.04倍，update500配对验证提高约0.00667；该结果是工程采用依据，不能替代从零多种子训练。
++
++| 候选 | 质量分 S | 最佳验证 J | KL P90 | 最弱拓扑差 | 资格 |
++|---|---|---|---|---|---|
++| B | 0.654349 | 0.662251 | 0.04420 | 0.000000 | 通过 |
++| C1 | 0.657075 | 0.658264 | 0.04085 | -0.006885 | 未通过 |
++| C2 | 0.655388 | 0.657917 | 0.03650 | -0.006810 | 未通过 |
++| C3 | 0.650257 | 0.658985 | 0.03601 | -0.006830 | 未通过 |
++| C4 | 0.652867 | 0.657824 | 0.04529 | -0.007834 | 未通过 |
++
++B为3e-4/4epochs，C1为3epochs，C2为2epochs，C3为2e-4，C4为target-KL0.03；候选比较300updates，未通过质量/拓扑门槛后保留B。三种子通过1000-update门槛，满足延长条件后统一训练到1500。
++
++| 种子 | 最佳 update | 最佳验证 J | 最终验证 J | 更新计算/分钟 | 验证推理/分钟 |
++|---|---|---|---|---|---|
++| 0 | 1150 | 0.669582 | 0.663991 | 48.46 | 36.77 |
++| 1 | 1450 | 0.671094 | 0.664512 | 32.67 | 23.79 |
++| 2 | 875 | 0.668755 | 0.661607 | 31.65 | 24.98 |
++
++每种子768000条transition，合计2304000条。有效日志更新计时与验证实例推理计时合计约3.31小时，不含参数搜索、启动、保存和恢复等完整墙钟成本。正式日志硬可行率100%、非法动作为0；训练存在回撤，部署使用best.pt。seed1曾发生中断及错误默认参数恢复，相关无效分支已隔离，不纳入上述统计。
++
++# 8. 初步结果与局限
++
++## 8.1. 冻结后的675例测试
++
++| 算法 | 插值 J | 留出组合 J | 插值平均时间/s | 留出平均时间/s |
++|---|---|---|---|---|
++| 随机可行 | 0.603897 | 0.604979 | 0.002533 | 0.002376 |
++| Effect-only | 0.619974 | 0.620868 | 0.000024 | 0.000023 |
++| 标量贪婪 | 0.655647 | 0.656164 | 0.000029 | 0.000029 |
++| PPO seed1 | 0.671166 | 0.671739 | 0.331693 | 0.326528 |
++| 单点局部搜索 | 0.687444 | 0.688414 | 22.144741 | 22.224597 |
++
++PPO对标量贪婪平均提高0.015519/0.015575，对单点局部搜索低0.016278/0.016675。相对当前Python局部搜索的平均求解时间比约为66.8/68.1；它只支持此版本实现下的初步质量—时间折中。
++
++## 8.2. 三种子与画像组合
++
++| 场景 | 三种子 J 均值 ± SD | staircase J 均值 ± SD | 硬可行率 / 非法动作 |
++|---|---|---|---|
++| interpolation | 0.669342 ± 0.001292 | 0.613729 ± 0.002150 | 100% / 0 |
++| heldout | 0.670409 ± 0.000944 | 0.616328 ± 0.002549 | 100% / 0 |
++
++held-out指已知学生/教师模板的未见组合，五种拓扑均在训练中出现过。没有验证任意新画像分布、新权重、新目标分布和全新拓扑类型。
++
++## 8.3. 精确与混合对照
++
++| 方法 | 平均 J | 绝对最优差 | 相对最优差/% | 平均时间/s | 中位时间/s |
++|---|---|---|---|---|---|
++| PPO | 0.673091 | 0.018331 | 2.659 | 1.091 | 1.165 |
++| PPO+4 | 0.674827 | 0.016595 | 2.406 | 1.500 | 1.473 |
++| PPO+8 | 0.676073 | 0.015349 | 2.225 | 1.919 | 1.719 |
++| PPO+16 | 0.677772 | 0.013650 | 1.976 | 2.655 | 2.174 |
++| PPO+32 | 0.680054 | 0.011368 | 1.642 | 4.098 | 2.744 |
++| 单点局部搜索 | 0.690365 | 0.001057 | 0.150 | 21.604 | 4.124 |
++| Gurobi | 0.691422 | 0.000000 | 0.000 | 1.869 | 0.327 |
++
++45个Gurobi算例全部首轮证得最优，无600秒追加，重算误差最大3.79e-14。修正计时后，Gurobi在30/45个实例快于PPO、45/45个快于当前Python单点局部搜索。PPO+32恢复40.31%的局部搜索增益、耗时占18.97%，未达50%质量门槛。不能宣称PPO全面优于精确求解。
++
++## 8.4. 后续改进方向
++
++由当前数据出发，优先分解质量差距与规模/拓扑/目标分项的关系，诊断推理步数、动作重复与停止条件；用控制变量实验检验偏好和全局分布项的作用；进一步统一初始化、加载、构建和求解的计时边界。更大邻域、不同混合预算与摊销部署价值均属于待验证方向，不能预写正面结论。本版保留staircase，不纳入截止以后对训练范围和目标权重的更改。
++
++# 9. 研究动机与可用表述
++
++研究问题在于协调理论教学匹配、双主体偏好与整体方法组合。规则目标包含非加性全局项，构造式局部贪婪未必充分；从效果匹配初解出发学习局部替换是一条已实现、可验证的求解路径。采用PPO的价值需要由质量、成本、适用场景与消融证据具体支持，不能仅从解空间大或偏好存在就推导其优越性。
++
++建议表述：“本研究实现了以教学效果贪婪初解为起点的共享Masked PPO方法，完成五拓扑、多规模与合成偏好场景下的训练和初步比较。PPO改善了简单基线的综合目标，在当前实现下较完整单点局部搜索节省推理时间；精确求解对照揭示了剩余最优差距及方法适用性问题，后续将据此完善算法和实验。”
++
++不将该方法称为“先保证效果再优化偏好”的词典序或约束优化，不将单点局部最优当作全局最优，不将规则评分提高当作实测教学收益，不将后续计划记为已完成实验。
++
++## 9.1. 可追溯依据
++
++历史依据：data_processed/splits、三种子results/formal_joint_seed*_run01、results/final_evaluation、results/publication_ready_20260908、results/exact_hybrid_validation_pilot/fair_runtime和summary_fair_runtime，以及docs/ppo_parameter_search_and_final_evaluation_20260908.md。
++
++9月8日晚间pilot没有进一步使用测试集，但此前675×2的冻结后测试已经完成，不能说“所有测试仍封存”。本次整理不重跑训练，不回滚当前代码，也不将9月22日状态当成9月8日代码快照。

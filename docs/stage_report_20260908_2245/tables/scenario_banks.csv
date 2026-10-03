@@ -1,0 +1,4 @@
+﻿bank,scenarios,template_pairs
+validation_interpolation,30,30
+test_interpolation,60,30
+test_heldout,30,6

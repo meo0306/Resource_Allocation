@@ -1,0 +1,56 @@
+{
+  "full_local_search_gain_over_ppo": 0.017274302548580645,
+  "selection_rule": "minimum budget with >=50% gain recovery and <=20% runtime",
+  "selected_budget": null,
+  "selection_status": "no_candidate_meets_gate",
+  "candidates": [
+    {
+      "solver_name": "ppo_plus_short_local_search_4",
+      "accepted_move_budget": 4,
+      "score_mean": 0.674826686962469,
+      "runtime_mean": 1.5004490577777687,
+      "recovered_local_search_gain": 0.10047803249815661,
+      "runtime_ratio_to_full_local_search": 0.06945181432241052,
+      "feasible_rate": 1.0,
+      "eligible": false
+    },
+    {
+      "solver_name": "ppo_plus_short_local_search_8",
+      "accepted_move_budget": 8,
+      "score_mean": 0.6760730539014861,
+      "runtime_mean": 1.91860864444442,
+      "recovered_local_search_gain": 0.1726295382108749,
+      "runtime_ratio_to_full_local_search": 0.08880731447735786,
+      "feasible_rate": 1.0,
+      "eligible": false
+    },
+    {
+      "solver_name": "ppo_plus_short_local_search_16",
+      "accepted_move_budget": 16,
+      "score_mean": 0.6777720207489389,
+      "runtime_mean": 2.6552133933333204,
+      "recovered_local_search_gain": 0.27098180700290503,
+      "runtime_ratio_to_full_local_search": 0.12290279808185009,
+      "feasible_rate": 1.0,
+      "eligible": false
+    },
+    {
+      "solver_name": "ppo_plus_short_local_search_32",
+      "accepted_move_budget": 32,
+      "score_mean": 0.6800540777381366,
+      "runtime_mean": 4.097538908888875,
+      "recovered_local_search_gain": 0.40308884766517517,
+      "runtime_ratio_to_full_local_search": 0.18966422752164644,
+      "feasible_rate": 1.0,
+      "eligible": false
+    }
+  ],
+  "gurobi": {
+    "cases": 45,
+    "proven_optimal_rate": 1.0,
+    "mip_gap_mean": 0.0,
+    "mip_gap_p90": 0.0,
+    "two_stage_rate": 0.0,
+    "objective_recompute_error_max": 3.785860513971784e-14
+  }
+}

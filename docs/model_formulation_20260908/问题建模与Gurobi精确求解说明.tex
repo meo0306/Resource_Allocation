@@ -1,0 +1,478 @@
+\documentclass[UTF8,11pt,a4paper,fontset=fandol]{ctexart}
+\usepackage[margin=2.15cm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,longtable,array,tabularx}
+\usepackage{xcolor,enumitem,hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,urlcolor=blue!45!black,pdftitle={教学方法分配问题：数学建模与Gurobi精确求解}}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{3pt}
+\setlength{\emergencystretch}{3em}
+\renewcommand{\arraystretch}{1.22}
+\setlist{nosep,leftmargin=2em}
+\newcommand{\pos}[1]{\left[#1\right]_{+}}
+\newcommand{\clip}{\operatorname{clip}_{[0,1]}}
+\newcommand{\I}{\mathcal I}
+\newcommand{\M}{\mathcal M}
+\newcommand{\A}{\mathcal A}
+\newcommand{\X}{\mathcal X}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\title{教学方法分配问题\\数学建模与 Gurobi 精确求解说明}
+\author{Resource\_Allocation 项目阶段材料}
+\date{状态截止：2026 年 9 月 8 日 22:45（北京时间）\\文档整理与独立核验：2026 年 10 月 2 日}
+\begin{document}
+\maketitle
+\begin{abstract}
+本文依据截至指定时间的五拓扑实验材料、保存的输入与解、Gurobi 日志及项目代码，重建教学方法分配问题的数学表达。模型在已选定知识点的前提下，为每个知识点选择一种教学方法；以教学效果、学生和教师偏好、方法分布匹配的加权和为收益，并对多样性不足和方法占比超限施加平方惩罚。本文给出符号表、输入预计算、完整模型及求解器表达，并说明其数学适用条件。
+
+当时的精确求解实现并非纯线性模型：绝对值和正部函数通过辅助变量及线性不等式处理，熵通过覆盖全部整数计数的分段线性一般约束表达，平方惩罚保留为二次目标。在历史实例的参数范围内，该表达与实际评分器在所有可行分配上等价；实际评分器使用的平滑截断熵与标准 Shannon 熵存在极小但非零的差别。
+\end{abstract}
+\tableofcontents
+\newpage
+
+\section{问题背景、边界与历史口径}
+\subsection{本阶段实际求解什么问题}
+给定一组已经选定的知识点、每个知识点的类别与认知负荷、候选教学方法属性，以及一个固定的学生和教师偏好场景，决定每个知识点采用哪一种教学方法。一个解是长度为 $N$ 的方法分配向量，或等价的 $N\times M$ 二元分配矩阵。
+
+上游算例包含网络拓扑、节点及知识点选择结果；本阶段通过选择结果提取知识点并构建分配算例。\textbf{原始网络中的前驱关系、工期、资源容量和知识点选择本身，没有作为本模型的新增决策或调度约束。}因此，本模型的最优性仅针对固定知识点集合上的方法分配，不能据此声称联合解决了知识点选择、课程排程或资源受限调度问题。上游可行性需由上游过程保证，算例转换过程本身不构成上游可行性的证明。
+
+教学效果矩阵与偏好场景采用规则及数值配置构建。$F_E$ 是该代理评分体系下的效果匹配分数，不能直接解释为真实教学干预的因果效果。PPO、贪心、局部搜索与 Gurobi 比较的是同一固定输入、同一可行域与同一评分函数。
+
+\subsection{资料版本及证据强度}
+本文以截止时间前保存的输入 JSON、分配结果、实验说明及求解日志为主要证据，并用当前代码中的原权重评分分支核对公式。当前仓库并不存在可直接还原 9 月 8 日 22:45 全部文件的独立提交快照；其中后来增加的统一目标配置接口和数值容差设置，不追溯认定为当时已经使用。历史日志可以直接确认求解器版本为 Gurobi 12.0.3，以及 PWL 约束、二次目标项和规模统计。
+
+2026 年 10 月 2 日完成的独立公式重算属于本次文档核验，\textbf{不是新增训练或新增 Gurobi 求解实验}。原文件 \path{docs/scheme_final.md} 不因本文而自动改写。
+
+\section{符号表（Notation）}
+为避免同一字母兼指知识点类别和方法计数，本文分别使用 $c_i$ 和 $n_m$。数学索引从 1 开始，代码的方法与数组索引从 0 开始；二者只相差索引约定。定义 $[t]_+=\max\{0,t\}$，$\clip(t)=\min\{1,\max\{0,t\}\}$；对数均为自然对数。
+
+\subsection{集合、原始输入及预计算参数}
+\small
+\begin{longtable}{p{.20\textwidth}p{.26\textwidth}p{.46\textwidth}}
+\caption{集合与固定输入；均不由本次方法分配优化决定}\label{tab:inputs}\\
+\toprule 符号 & 类型或范围 & 含义 \\ \midrule\endfirsthead
+\toprule 符号 & 类型或范围 & 含义 \\ \midrule\endhead
+\bottomrule\endfoot
+$V,\ \bar s_v$ & 节点数；$\bar s_v\in\{0,1\}$ & 原始算例节点数与上游给定的节点选择标记；$v=1,\ldots,V$。\\
+$\I,\ N$ & $\I=\{1,\ldots,N\}$ & 提取并重编号后的知识点集合及其大小，$N\ge1$。\\
+$\M,\ M$ & $\M=\{1,\ldots,M\}$ & 候选教学方法集合及其大小；历史设置 $M=11$。\\
+$\mathcal C,\ K_c$ & $\mathcal C=\{1,\ldots,K_c\}$ & 知识点类别集合；$K_c=6$。\\
+$\mathcal D,\mathcal D_5$ & $\mathcal D=\{1,\ldots,6\}$；$\mathcal D_5=\{1,\ldots,5\}$ & 属性维度及前五项非认知负荷维度，索引 $k$。\\
+$c_i,\ q_i$ & $c_i\in\mathcal C$；$q_i\in[0,1]$ & 知识点类别和输入算例的认知负荷属性（$q_2$）。\\
+$D^C_{ck}$ & $K_c\times5$ 常数矩阵 & 类别需求原型；据类别生成知识点前五维需求。\\
+$u_{ik}$ & $N\times6$，$[0,1]$ & 知识点需求：前五维取类别原型，第六维为 $q_i$。\\
+$r_{mk}$ & $M\times6$，$[0,1]$ & 教学方法属性矩阵，求解前固定。\\
+$A^E_{mc},\ E_{im}$ & $[0,1]$ & 方法与类别的规则效果矩阵，以及按知识点类别提取的效果分数。\\
+$b,\theta^b_k$ & $b\in\{S,T\}$；$\theta^b_k\in[0,1]$ & $S$ 为学生、$T$ 为教师；两者各有六维偏好画像。\\
+$\lambda_q,\lambda_r$ & 非负，和为 1 & 知识点与方法认知负荷的组合权重。\\
+$\omega_k,\alpha_b$ & $\omega_k\ge0$，$\sum_{k=1}^5\omega_k=1$；$\alpha_b\in[0,1]$ & 前五维匹配权重，以及一般匹配和负荷适配之间的权重。\\
+$z_{imk}$ & $[0,1]$ & 知识点 $i$ 使用方法 $m$ 时的六维组合属性。\\
+$\Phi^b_{im},\Psi^b_{im}$ & $[0,1]$ & 前五维匹配分数和第六维负荷适配分数。\\
+$P^S_{im},\ P^T_{im}$ & $N\times M$，$[0,1]$ & 预计算的学生和教师偏好满足分数。\\
+$\Gamma_{im}$ & $\{0,1\}$ & 固定方法可用性掩码；为 1 才允许该分配。\\
+$\A$ & $\{(i,m):\Gamma_{im}=1\}$ & 允许的知识点--方法对集合，$|\A|$ 是其大小。\\
+$\rho_m$ & $\rho_m\ge0,\ \sum_m\rho_m=1$ & 目标教学方法使用分布，求解前固定。\\
+$\bar\pi_m,\ H_{\min}$ & $\bar\pi_m\in(0,1]$；$H_{\min}\in[0,1]$ & 方法占比软上限、多样性软下限。\\
+$\varepsilon$ & 正数，历史为 $10^{-8}$ & 熵计算中对数内部的平滑常数。\\
+$w_E,w_S,w_T,w_G$ & 非负权重 & 四项收益的标量化权重。\\
+$w_{\mathrm{soft}},\lambda_{\mathrm{div}},\lambda_{\mathrm{cap}}$ & 非负权重 & 总惩罚权重及两类平方违反量的权重。\\
+\end{longtable}
+\normalsize
+
+\subsection{决策、派生量和目标}
+\small
+\begin{longtable}{p{.20\textwidth}p{.26\textwidth}p{.46\textwidth}}
+\caption{原模型中的变量及目标分解}\\
+\toprule 符号 & 类型或范围 & 含义 \\ \midrule\endfirsthead
+\toprule 符号 & 类型或范围 & 含义 \\ \midrule\endhead
+\bottomrule\endfoot
+$x_{im}$ & 二元决策变量 & 当且仅当知识点 $i$ 选择方法 $m$ 时为 1。\\
+$a_i$ & $\M$ 中的整数 & 分配向量表达，$x_{i,a_i}=1$；不必与 $x$ 同时建变量。\\
+$\X$ & 有限集合 & 满足唯一分配及可用性限制的所有 $x$。\\
+$n_m$ & $\{0,\ldots,N\}$ & 使用方法 $m$ 的知识点数量，由 $x$ 唯一确定。\\
+$\pi_m$ & $\{0,1/N,\ldots,1\}$ & 实际使用比例 $n_m/N$；Gurobi 中用表达式实现。\\
+$F_E,F_S,F_T$ & $[0,1]$ & 效果匹配、学生偏好和教师偏好的知识点平均分。\\
+$F_G$ & $[0,1]$ & 实际分布与目标分布的匹配分数。\\
+$H_0,\ H_\varepsilon$ & $[0,1]$ & 标准归一化 Shannon 熵，以及实际使用的平滑截断熵。\\
+$V_{\mathrm{div}},V_{\mathrm{cap}}$ & 非负派生量 & 熵不足和占比超限的平方违反量。\\
+$V_{\mathrm{soft}}$ & 非负派生量 & 两类违反量的加权和。\\
+$\ell_{im}$ & 非负常数 & $w_EE_{im}+w_SP^S_{im}+w_TP^T_{im}$。\\
+$J(x),\ J^*$ & 实数 & 分配总分及其全局最优值。\\
+$J_0(x)$ & 实数 & 仅把实际熵替换为标准 Shannon 熵时，同一分配的理论分数。\\
+\end{longtable}
+\normalsize
+
+\subsection{Gurobi 辅助变量与求解认证符号}
+“约束变量”在本文中具体指用于表达非线性函数的辅助变量；它们不增加教学层面的自由决策。
+\small
+\begin{longtable}{p{.20\textwidth}p{.26\textwidth}p{.46\textwidth}}
+\caption{求解器表达所用符号}\\
+\toprule 符号 & 类型或范围 & 含义 \\ \midrule\endfirsthead
+\toprule 符号 & 类型或范围 & 含义 \\ \midrule\endhead
+\bottomrule\endfoot
+$d_m$ & 连续，非负 & 绝对偏差的上界变量；最优时等于 $|\pi_m-\rho_m|$。\\
+$e_m$ & 连续，非负 & 占比超限量的上界变量；最优时等于 $[\pi_m-\bar\pi_m]_+$。\\
+$h_m$ & 连续，非负 & 方法 $m$ 的离散熵贡献，由 PWL 等式确定。\\
+$\eta$ & 连续，$[0,1]$ & 求解器中的总熵变量，$\eta=\sum_mh_m$。\\
+$s$ & 连续，非负 & 多样性短缺量的上界变量；最优时为 $[H_{\min}-\eta]_+$。\\
+$t,\ g_N(t)$ & $t=0,\ldots,N$ & 整数计数断点及该断点的熵贡献函数值。\\
+$\widehat g_N$ & 分段线性函数 & 相邻断点 $(t,g_N(t))$ 之间的线性插值。\\
+$\xi_{mt}$ & 连续，非负 & 解释 PWL 等式的 SOS2 凸组合变量；代码未手动创建此组变量。\\
+$L,\ U$ & 实数 & 最大化问题的当前可行解值与求解器最优值上界。\\
+$J_A$ & 实数 & 任一待比较算法 $A$ 给出的可行解分数。\\
+$\delta_H$ & 非负常数 & 本文推导的熵差异上界 $M\varepsilon/\ln M$。\\
+\end{longtable}
+\normalsize
+
+\section{从算例到固定评分参数}
+\subsection{知识点提取和属性构造}
+从上游选择标记提取节点，保留原节点标识用于追溯，再重编号为 $\I$。在提取规则对应的有效知识点范围内有 $N=\sum_v\bar s_v$。六类知识点依次为基础、理论、算法、实验、案例和扩展。六个属性维度依次为引导、互动、实践、自主、协作和认知负荷（代码字段为 guidance、interaction、practice、autonomy、collaboration、cognitive\_load）。令
+\begin{equation}
+ u_{ik}=D^C_{c_i k}\quad(k\le5),\qquad u_{i6}=q_i,\qquad E_{im}=A^E_{m,c_i}.
+ \label{eq:input}
+\end{equation}
+候选方法按历史索引顺序为：讲授法、讨论法、案例分析法、实验法、项目式学习、翻转课堂、探究式学习、协作学习、游戏化教学、辅导法、在线自适应学习。输入矩阵的列顺序与 $\rho$ 的元素顺序必须保持一致。
+
+\subsection{知识点--方法组合与偏好评分}
+对每个允许或候选的 $(i,m)$，先计算
+\begin{align}
+ z_{imk}&=u_{ik}r_{mk},&&k\in\mathcal D_5,\label{eq:z5}\\
+ z_{im6}&=\lambda_q q_i+\lambda_r r_{m6}.\label{eq:z6}
+\end{align}
+对 $b\in\{S,T\}$，计算
+\begin{align}
+ \Phi^b_{im}&=\sum_{k=1}^{5}\omega_k\bigl(1-|z_{imk}-\theta^b_k|\bigr),\label{eq:phi}\\
+ \Psi^b_{im}&=1-[z_{im6}-\theta^b_6]_+,\label{eq:psi}\\
+ P^b_{im}&=\clip\bigl(\alpha_b\Phi^b_{im}+(1-\alpha_b)\Psi^b_{im}\bigr).\label{eq:pref}
+\end{align}
+前五维采用双向距离匹配，第六维采用单侧超负荷惩罚；负荷低于画像阈值不会在此项受罚。在所有输入均位于 $[0,1]$、权重满足表 \ref{tab:inputs} 条件时，式 \eqref{eq:phi}--\eqref{eq:pref} 已落在 $[0,1]$，最后的截断主要起防御性作用。
+
+\textbf{式 \eqref{eq:input}--\eqref{eq:pref} 全部在求解前计算。}其中的乘积、绝对值、正部和截断都只涉及输入常数，Gurobi 接收的是 $E,P^S,P^T$ 的数值矩阵。因此它们不是需要在整数规划中线性化的非线性决策项。
+
+\begin{table}[htbp]
+\centering\small
+\caption{历史五拓扑口径的主要数值设置}\label{tab:parameters}
+\begin{tabularx}{\textwidth}{p{.32\textwidth}X}
+\toprule 参数 & 数值 \\ \midrule
+$M,K_c$ & $11,6$ \\
+$\lambda_q,\lambda_r$ & $0.6,0.4$ \\
+$\omega_k\ (k\le5)$；$\alpha_S,\alpha_T$ & 各 $0.2$；$0.75,0.75$ \\
+$(w_E,w_S,w_T,w_G,w_{\mathrm{soft}})$ & $(0.30,0.25,0.25,0.10,0.10)$ \\
+$H_{\min},\bar\pi_m$ & $0.55,0.35$（所有方法同一占比软上限） \\
+$\lambda_{\mathrm{div}},\lambda_{\mathrm{cap}},\varepsilon$ & $1,1,10^{-8}$ \\
+$\rho$ & $(0.18,0.12,0.10,0.10,0.10,0.08,0.08,0.08,0.05,0.05,0.06)$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+类别原型、方法属性及规则效果矩阵均为数值输入，数学模型不要求把它们视为待估计变量。复现实验应直接读取对应历史输入 JSON，避免只凭文字重新录入矩阵。学生和教师画像由场景文件提供；对一个给定的“算例--场景”组合，全部画像在求解过程中固定。
+
+\section{完整数学模型（Formulation）}
+\subsection{硬约束与方法分布}
+本阶段真正的分配硬约束为
+\begin{align}
+ \sum_{m\in\M}x_{im}&=1,&&i\in\I,\label{eq:one}\\
+ x_{im}&\le\Gamma_{im},&&(i,m)\in\I\times\M,\label{eq:mask}\\
+ x_{im}&\in\{0,1\},&&(i,m)\in\I\times\M.\label{eq:binary}
+\end{align}
+以 $\X$ 表示以上可行域。方法计数和分布是派生量：
+\begin{equation}
+ n_m=\sum_{i\in\I}x_{im},\qquad \pi_m=\frac{n_m}{N},\qquad
+ \sum_m n_m=N,\quad\sum_m\pi_m=1.\label{eq:counts}
+\end{equation}
+最后两个等式由唯一分配约束推出，不必重复添加。历史已处理的分配算例中，固定可用性掩码为全真；保留 $\Gamma$ 是为表达实现支持的通用可用性限制。
+
+PPO 在“把当前知识点的方法替换成另一方法”时，会在动作掩码中排除当前方法。这是搜索动作的有效性条件，\textbf{不能}加到静态优化模型中作为“该知识点不能采用当前方法”的硬约束，否则会改变 Gurobi 与 PPO 所比较的问题。
+
+\subsection{收益项与分布匹配}
+三项局部分数使用知识点均值，避免总分因 $N$ 增大而直接按规模放大：
+\begin{align}
+ F_E(x)&=\frac1N\sum_{i,m}E_{im}x_{im},\label{eq:fe}\\
+ F_S(x)&=\frac1N\sum_{i,m}P^S_{im}x_{im},\qquad
+ F_T(x)=\frac1N\sum_{i,m}P^T_{im}x_{im}.\label{eq:fst}
+\end{align}
+实际分布与目标分布的匹配定义为
+\begin{equation}
+ F_G(x)=1-\frac12\sum_{m\in\M}|\pi_m-\rho_m|.\label{eq:fg}
+\end{equation}
+概率分布间的 $L_1$ 距离不超过 2，故 $F_G\in[0,1]$；它等于 1 减去总变差距离。只有存在符合掩码的分配使得 $n_m=N\rho_m$ 对每个 $m$ 成立时，才能达到 $F_G=1$。$N\rho_m$ 非整数时，精确匹配不可能，但模型仍然可行。
+
+\subsection{熵、多样性不足和占比超限}
+便于理论解释的标准归一化 Shannon 熵是
+\begin{equation}
+ H_0(\pi)=-\frac{1}{\ln M}\sum_m\pi_m\ln\pi_m,\qquad 0\ln0:=0.\label{eq:h0}
+\end{equation}
+然而，实际评分器使用的是
+\begin{equation}
+ H_\varepsilon(\pi)=\clip\left(-\frac{1}{\ln M}
+           \sum_m\pi_m\ln(\pi_m+\varepsilon)\right).\label{eq:heps}
+\end{equation}
+本文以式 \eqref{eq:heps} 作为历史实验模型的熵定义。$\varepsilon$ 的存在使 $\pi_m=0$ 处的对数计算有定义，但同时也使该公式不再严格等于标准 Shannon 熵。上述式子假定 $M\ge2$；代码在 $M=1$ 时单独返回熵 0，历史 $M=11$ 不涉及这一退化情形。
+
+软违反量定义为
+\begin{align}
+ V_{\mathrm{div}}(x)&=[H_{\min}-H_\varepsilon(\pi)]_+^2,\label{eq:vdiv}\\
+ V_{\mathrm{cap}}(x)&=\sum_m[\pi_m-\bar\pi_m]_+^2,\label{eq:vcap}\\
+ V_{\mathrm{soft}}(x)&=\lambda_{\mathrm{div}}V_{\mathrm{div}}(x)
+                  +\lambda_{\mathrm{cap}}V_{\mathrm{cap}}(x).\label{eq:vsoft}
+\end{align}
+这里并未施加 $H_\varepsilon\ge H_{\min}$ 或 $\pi_m\le\bar\pi_m$ 的硬约束。违反这两个阈值的分配仍可行，只是在目标中扣分。因而“硬约束可行率为 100\%”不代表“全部软违反量为零”。
+
+\subsection{标量优化目标}
+完整原问题为
+\begin{equation}
+ \boxed{\begin{aligned}
+ \max_{x\in\X}\ J(x)={}&w_EF_E(x)+w_SF_S(x)+w_TF_T(x)\\
+ &+w_GF_G(x)-w_{\mathrm{soft}}V_{\mathrm{soft}}(x).
+ \end{aligned}}\label{eq:original}
+\end{equation}
+这是多个评价维度的\textbf{固定权重标量化}，不是优先级优化，也不是对 Pareto 前沿的完整求解。模型没有对 $F_E$ 设置必须达到的最低水平；局部效果下降可能被偏好收益、分布收益或惩罚减少抵消。评估 PPO 结果时，应同时报告各分项，不能只据总分推断每项均改善。
+
+\subsection{数学合理性检查}
+\begin{enumerate}
+\item \textbf{可行性与最优解存在。} 在本阶段无其他硬约束的前提下，$\X\ne\varnothing$ 当且仅当每行 $\Gamma$ 至少有一个 1。因为每个知识点可独立选取一个允许的方法；而 $\X$ 有限，$J$ 有界，因此全局最优解存在，但不保证唯一。
+\item \textbf{各项量纲一致。} 三个局部项均为平均分；$F_G,H_\varepsilon$ 为比例型指标。四项收益的权重之和为 $0.90$，且惩罚非负，因此历史设置下 $J\le0.90$。总分 $0.69$ 不是“69\% 的准确率”，也不能默认 $J$ 的最大值为 1。
+\item \textbf{全局耦合仍然存在。} 如果只有局部项，每行选取最大的 $\ell_{im}$ 即可；加入分布距离与熵后，改变一个知识点的方法会改变全局计数，独立贪心不再保证全局最优。
+\item \textbf{离散性影响目标可达性。} 标准熵达到 1 需要均匀分布，计数层面还要求 $M$ 整除 $N$ 并满足掩码。平滑熵在均匀分布时略小于 1。软阈值不必同时可达；这不导致硬可行域为空。
+\item \textbf{含义与应用边界。} 固定效果矩阵、类别需求和画像确定了优化方向。求解器认证的是此代理模型下的最优性；提高求解精度不能消除输入规则与真实教学效用之间的建模偏差。
+\end{enumerate}
+
+\section{Gurobi 的逐项处理与等价性}
+\subsection{建模总览}
+\small
+\begin{longtable}{p{.21\textwidth}p{.43\textwidth}p{.28\textwidth}}
+\caption{原模型各部分在 Gurobi 中的表达}\label{tab:handling}\\
+\toprule 原模型部分 & 实现处理 & 是否涉及近似 \\ \midrule\endfirsthead
+\toprule 原模型部分 & 实现处理 & 是否涉及近似 \\ \midrule\endhead
+\bottomrule\endfoot
+组合属性和偏好 & 求解前用 NumPy 计算 $E,P^S,P^T$；作为目标系数 & 无决策非线性；仅浮点计算 \\
+唯一分配、可用性 & 仅为 $\A$ 创建二元变量；每行求和等于 1 & 等价删去固定为 0 的变量 \\
+计数及比例 & 整数计数等于二元变量列和；比例用 $n_m/N$ & 线性等式/表达式 \\
+分布绝对偏差 & 非负 $d_m$ 加两个线性下界 & 正惩罚系数下最优值等价 \\
+占比正部 & 非负 $e_m$ 加一个线性下界 & 平方惩罚促使最优时取紧 \\
+熵中的对数 & 为每个整数计数预计算函数值；PWL 图约束 & 整数可行计数上精确，不是连续对数的全域精确表达 \\
+熵短缺正部 & 非负 $s$，$s\ge H_{\min}-\eta$ & 平方惩罚促使最优时取紧 \\
+两类平方惩罚 & 直接保留 $s^2$ 和 $e_m^2$ & 二次目标，无分段近似线性化 \\
+\end{longtable}
+\normalsize
+
+\subsection{二元分配与计数}
+代码只为 $(i,m)\in\A$ 调用 \code{addVar(vtype=GRB.BINARY)}；不存在的变量相当于固定为 0，故不再显式添加 $x_{im}\le\Gamma_{im}$。计数变量调用整数类型，并施加
+\begin{equation}
+ \sum_{m:(i,m)\in\A}x_{im}=1,\qquad
+ n_m=\sum_{i:(i,m)\in\A}x_{im},\qquad 0\le n_m\le N.\label{eq:gcounts}
+\end{equation}
+在整数可行解中，二元变量列和已蕴含计数为整数；显式声明整数计数进一步清楚地表达了 PWL 函数输入的离散域。代码没有额外创建 $\pi_m$ 变量。
+
+\subsection{绝对值：线性上图表达，依靠目标取紧}
+引入 $d_m\ge0$ 并添加
+\begin{equation}
+ d_m\ge\frac{n_m}{N}-\rho_m,\qquad
+ d_m\ge\rho_m-\frac{n_m}{N}.\label{eq:abs}
+\end{equation}
+这两条约束只确保 $d_m\ge|n_m/N-\rho_m|$，\textbf{不是在所有可行点上强制等号}。由于最大化目标中 $d_m$ 的系数是 $-w_G/2<0$，固定 $x,n$ 后减小过大的 $d_m$ 会严格改善目标且不破坏约束，所以最优时等号成立。无需为绝对值引入额外二元选择变量或人工 Big-$M$ 常数。
+
+\subsection{正部函数和平方惩罚}
+对占比超限和熵短缺分别引入
+\begin{align}
+ e_m&\ge0,&e_m&\ge n_m/N-\bar\pi_m,\label{eq:excess}\\
+ s&\ge0,&s&\ge H_{\min}-\eta.\label{eq:shortfall}
+\end{align}
+在最大化目标中保留
+\begin{equation}
+ -w_{\mathrm{soft}}\left(\lambda_{\mathrm{div}}s^2+
+       \lambda_{\mathrm{cap}}\sum_m e_m^2\right).\label{eq:quadratic}
+\end{equation}
+历史设置中这些惩罚系数均严格为正，且平方函数在非负域严格递增，故最优时 $e_m=[n_m/N-\bar\pi_m]_+$、$s=[H_{\min}-\eta]_+$。这里\textbf{只把正部函数转为线性不等式，没有将平方项线性化}。若将相应系数改成零，最优值仍可等价，但该辅助变量不保证自动取紧；若允许负惩罚系数，则上述等价论证失效，甚至可能造成无界。
+
+\subsection{熵：在所有整数计数断点上精确表示}
+对于固定 $N$，枚举全部 $t=0,1,\ldots,N$，预计算
+\begin{equation}
+ g_N(t)=
+ \begin{cases}
+ 0,&t=0,\\
+ \displaystyle\max\left\{0,-\frac{t}{N}\frac{\ln(t/N+\varepsilon)}{\ln M}\right\},&t=1,\ldots,N.
+ \end{cases}\label{eq:gn}
+\end{equation}
+令 $\widehat g_N$ 是通过这些点、在相邻点间线性插值的函数。每个方法添加
+\begin{equation}
+ h_m=\widehat g_N(n_m),\qquad
+ \eta=\sum_mh_m,\qquad 0\le\eta\le1.\label{eq:pwl}
+\end{equation}
+代码接口为 \code{addGenConstrPWL(count[m], entropy_term[m], count_points, entropy_values)}。对数只在断点数组生成时计算；求解器没有直接接收 $\log$ 非线性表达式，也没有使用 Taylor 展开或 McCormick 包络。
+
+关键在于 $n_m$ 必须为整数，而且\textbf{每个}可能的整数计数都包含在断点中。因此任意可行分配均满足 $h_m=\widehat g_N(n_m)=g_N(n_m)$。分数计数位置的插值不等于原平滑对数曲线，但这些位置不属于最终整数可行分配；这不改变离散模型的最优解集合与最优值。若只抽取少量断点，或把计数放松为连续数后仍宣称精确，结论便不成立。
+
+\paragraph{PWL 图约束的 SOS2 解释。}
+可以用以下辅助表达理解一般约束的含义：
+\begin{align}
+ \sum_{t=0}^{N}\xi_{mt}&=1,&
+ n_m&=\sum_{t=0}^{N}t\xi_{mt},&
+ h_m&=\sum_{t=0}^{N}g_N(t)\xi_{mt},\label{eq:sos2}\\
+ \xi_{mt}&\ge0.\notag
+\end{align}
+并要求同一方法最多两个相邻断点的权重非零，即 SOS2 条件。相邻计数相差 1，当插值后的计数必须为整数时，只能落在端点上。\textbf{不能删去 SOS2 条件，仅保留任意凸组合}：非相邻断点的混合可能在同一整数计数处得到错误的熵贡献。
+
+式 \eqref{eq:sos2} 是解释性表达，项目代码没有手动创建 $\xi$。Gurobi 自行处理一般约束和预求解编码；历史日志中预求解后的 11 个 SOS 约束与该表达一致，但不应假定任何版本、任何设置都采用完全相同的内部变量编码。PWL 和 SOS2 的接口含义参见文末官方资料 [R1]。
+
+\subsection{逐项截断与总和截断为什么在本数据范围内一致}
+评分器先对全部熵项求和，再按式 \eqref{eq:heps} 截断；求解器则按式 \eqref{eq:gn} 对每个熵项单独取非负值后求和。两者一般不能仅凭“截断”二字断言一致。对历史实例，可给出明确证明。
+
+假设 $N\ge1$、$M\ge2$ 且 $0<\varepsilon\le1/N$。若全部知识点采用同一方法，则唯一非零概率为 1，原始熵和为 $-\ln(1+\varepsilon)/\ln M<0$。总和截断与逐项截断均得到 0。
+
+若至少有两种方法被使用，则任意正比例满足 $\pi_m\le1-1/N$，从而 $\pi_m+\varepsilon\le1$，每一个原始熵贡献都非负。又因 $\ln(\pi_m+\varepsilon)\ge\ln\pi_m$，其和不超过 $H_0\le1$；总和截断和逐项截断均不起作用。因此
+\begin{equation}
+ \sum_m g_N(n_m)=H_\varepsilon(\pi)\qquad
+ \text{对所有整数可行分配成立。}\label{eq:clipproof}
+\end{equation}
+历史已处理数据的 $N$ 范围为 37--775，$\varepsilon=10^{-8}$，满足上述充分条件。45 个精确求解试验实例的 $N$ 为 40--736。故 $\eta\le1$ 在整数可行分配上也不会意外排除原模型可行解。若未来大幅改变 $N$ 或 $\varepsilon$，必须重新检查这一等价条件。
+
+\subsection{与标准 Shannon 熵的差异界}
+对 $\pi_m>0$，有
+\begin{equation}
+ 0\le\pi_m\ln\left(1+\frac{\varepsilon}{\pi_m}\right)\le\varepsilon.
+\end{equation}
+由此，考虑总和截断后仍有
+\begin{equation}
+ 0\le H_0-H_\varepsilon\le\delta_H:=\frac{M\varepsilon}{\ln M}
+       \approx4.58736\times10^{-8}.\label{eq:entropybound}
+\end{equation}
+因为 $h\mapsto[H_{\min}-h]_+^2$ 在 $[0,1]$ 上的 Lipschitz 常数不超过 $2H_{\min}$，对\emph{同一个}分配，若仅将熵换为 $H_0$，记所得分数为 $J_0(x)$，则
+\begin{equation}
+ 0\le J_0(x)-J(x)\le
+ 2w_{\mathrm{soft}}\lambda_{\mathrm{div}}H_{\min}\delta_H
+ \approx5.04609\times10^{-9}.\label{eq:scorebound}
+\end{equation}
+这个界很小，足以说明通常的汇报精度不会受影响，但不能由此宣称两种公式完全相同，或在任意接近的候选解之间必然给出相同排序。本文的“离散精确表达”针对实际 $H_\varepsilon$ 评分器。
+
+\subsection{送入 Gurobi 的完整模型}
+将 $\ell_{im}=w_EE_{im}+w_SP^S_{im}+w_TP^T_{im}$ 作为常数，实际求解器模型可紧凑写为
+\begin{align}
+ \max\quad &\frac1N\sum_{(i,m)\in\A}\ell_{im}x_{im}
+       +w_G\left(1-\frac12\sum_m d_m\right)\notag\\
+       &{}-w_{\mathrm{soft}}\left(\lambda_{\mathrm{div}}s^2+
+                      \lambda_{\mathrm{cap}}\sum_m e_m^2\right) \label{eq:miqp}\\
+ \text{s.t.}\quad
+ &\sum_{m:(i,m)\in\A}x_{im}=1 &&\forall i,\notag\\
+ &n_m=\sum_{i:(i,m)\in\A}x_{im} &&\forall m,\notag\\
+ &d_m\ge n_m/N-\rho_m,\quad d_m\ge\rho_m-n_m/N &&\forall m,\notag\\
+ &e_m\ge n_m/N-\bar\pi_m &&\forall m,\notag\\
+ &h_m=\widehat g_N(n_m) &&\forall m,\notag\\
+ &\eta=\sum_mh_m,\quad s\ge H_{\min}-\eta,\notag\\
+ &x_{im}\in\{0,1\} &&\forall(i,m)\in\A,\notag\\
+ &n_m\in\{0,\ldots,N\},\quad d_m,e_m,h_m\ge0 &&\forall m,\notag\\
+ &0\le\eta\le1,\quad s\ge0.\notag
+\end{align}
+对于每个原问题可行 $x$，选择上述辅助变量的紧值即可使式 \eqref{eq:miqp} 的目标等于 $J(x)$；其他可行辅助取值只可能降低目标。结合式 \eqref{eq:clipproof}，两模型在历史参数条件下具有相同的最优值，且最优分配相互对应。
+
+该模型可称为\textbf{含 PWL 一般约束的混合整数二次优化模型}。二次目标是非正系数的平方项之和，加上线性项，属于凹的最大化目标；取负号即为凸二次最小化目标。但 PWL 图等式及整数决策仍包含离散结构，不能据此把整个问题称为普通连续凸优化，也不能称为纯 MILP。关于二次目标与 MIQP 的术语参见 [R2]。
+
+\section{模型规模、执行流程与精确性认证}
+\subsection{从公式核对历史求解日志}
+预求解前，在 $|\A|$ 个允许分配对下：二元变量 $|\A|$ 个，整数计数变量 $M$ 个，连续变量 $3M+2$ 个；变量总数为 $|\A|+4M+2$。线性约束包括 $N$ 条唯一分配、$M$ 条计数、$2M$ 条绝对值下界、$M$ 条占比下界、1 条熵求和和 1 条熵短缺下界，总计 $N+4M+2$ 条。此外有 $M$ 个 PWL 一般约束和 $M+1$ 个非零二次目标项。变量上下界不计入此线性约束行数。
+
+\begin{table}[htbp]
+\centering\small
+\caption{一份历史日志的公式--实现交叉核对（$N=41,M=11$，全允许）}
+\begin{tabular}{lrr}
+\toprule 项目 & 按公式计算 & 日志记录 \\ \midrule
+二元变量 & $41\times11=451$ & 451 \\
+整数变量（含二元） & $451+11=462$ & 462 \\
+连续变量 & $3\times11+2=35$ & 35 \\
+总变量 & $451+4\times11+2=497$ & 497 \\
+线性约束行 & $41+4\times11+2=87$ & 87 \\
+PWL 一般约束 & 11 & 11 \\
+二次目标项 & 12 & 12 \\
+\bottomrule
+\end{tabular}
+\end{table}
+该日志为 \path{bottleneck_group1_inst_V60_w6-10_s670560.log}，记录于 9 月 8 日 21:47。预求解后记录 11 个 SOS 约束；最终最优分数约为 $0.7118184812354$。本次检查的 45 份日志均符合上述规模关系。这也直接证实当时未把所有平方项转换为线性目标。
+
+\subsection{热启动与两阶段时间预算}
+默认初解为在允许方法中按 $\ell_{im}$ 独立选取最大值的分配。代码将该分配写入二元变量的 \code{Start} 属性，作为可行初解提示；不把初解固定为约束，也不要求精确求解从 PPO 解出发。初解可改善搜索起点，但不提供全局最优保证。
+
+历史试验第一阶段设置 \code{TimeLimit=120} 秒、\code{MIPGap=0}。若第一阶段未达最优且间隙大于 1\%，则以第一阶段分配为热启动，重新构建模型进行 600 秒的第二阶段求解。这里的 1\% 是试验的追加计算触发阈值，\textbf{不是}第一阶段的求解器相对间隙目标。第二阶段是重新建模并传入初解，不是恢复同一棵分支定界树。历史 45 个试验均在第一阶段报告最优，未触发重试。
+
+若达到时限但存在 incumbent，则可保留可行解及上界；若 \code{SolCount=0}，所检查的求解函数会抛出异常，不能把这种情况描述为已经返回一个有限可行下界。
+
+\subsection{最大化问题的上下界与最优间隙}
+设 $L$ 是求解器当前可行解的目标值，$U$ 是其最优值上界，则在精确算术含义下
+\begin{equation}
+ L\le J^*\le U.\label{eq:bounds}
+\end{equation}
+Gurobi 的 \code{ObjVal} 对应 incumbent 值，\code{ObjBound} 对应界；通常的相对 MIP gap 在 $L\ne0$ 时为 $|U-L|/|L|$，零分母等特殊情况按求解器定义处理 [R3]。\code{MIPGap=0} 仅设定相对终止条件，不代表取消可行性、整数性、最优性容差或绝对间隙终止条件。
+
+因此，日志中 \code{OPTIMAL} 应表述为“在求解器数值容差意义下证明最优”，不是有理数精确算术证明。历史日志明确列出的非默认参数包括时间限制和相对间隙；不能把当前代码中后来加入的 $10^{-9}$ 容差或数值关注设置写成历史实验的已确认配置。
+
+若已获得 $J^*$，对于可行算法解 $J_A$，可报告
+\begin{equation}
+ \operatorname{gap}_A=\frac{J^*-J_A}{|J^*|},\qquad J^*\ne0.\label{eq:algogap}
+\end{equation}
+未证明最优时，不能直接把 incumbent 当成 $J^*$。可用
+\begin{equation}
+ \max\{0,L-J_A\}\ \le\ J^*-J_A\ \le\ U-J_A\label{eq:interval}
+\end{equation}
+报告绝对次优差距的认证区间；另一个算法的更好可行解也可改善下界。数值输出中的微小负差应结合容差解释，不能据此宣称可行算法超越了真正的全局最优值。
+
+\subsection{结果重评分与运行时间口径}
+求解结束后，按每行二元变量的解值解码分配，并调用统一评分器重算各分项及总分，比较模型目标与重评分结果。这一检查能发现索引、权重或函数表达不一致，但不替代模型的理论等价证明。
+
+原始 Gurobi 优化器计时主要覆盖 \code{optimize()}；截止时间前另有 fair-runtime 重测，包围完整 \code{solve_gurobi} 调用，包含初解生成、建模、求解和结果处理。PPO 的已检查计时则主要覆盖动作循环与设备同步，环境重置在计时前、最终指标处理在计时后。因而这些时间应注明各自边界，不宜一概称为完全统一的端到端时间。时间统计不影响目标函数的等价性认证。
+
+\section{历史证据与本次独立核验}
+\subsection{截至指定时间已经保存的结果}
+精确求解验证试验包含 45 个“算例--场景”组合，7 种算法共保存 315 个分配。45 个 Gurobi 结果均报告最优；历史保存的求解目标与解码后重评分最大差约为 $3.79\times10^{-14}$。同一试验平均总分中，PPO 为 $0.673091$，局部搜索为 $0.690365$，Gurobi 为 $0.691422$。这些数字说明在该试验口径下已经建立可用的精确参照，PPO 尚有改进空间；不能从 45 个试验推断所有规模均能在同样时间内精确求解。
+
+保存的微型正确性检查还包括 3 个知识点、11 种方法的穷举核对（$11^3$ 个组合）。它提供有限规模上的实现证据，不代替对一般 $N$ 的数学论证。
+
+\subsection{2026 年 10 月 2 日的文档核验}
+本次从保存的输入及场景重新构建 $z,P^S,P^T$，逐一计算 315 个历史分配的 $F_E,F_S,F_T,F_G,H_\varepsilon,V_{\mathrm{soft}},J$，并核对方法可用性。核验脚本未导入项目评分器作为计算答案，也未重新调用优化器。结果为：
+\begin{table}[htbp]
+\centering\small
+\caption{本次独立数学核验结果（与历史实验日期区分）}
+\begin{tabularx}{\textwidth}{Xr}
+\toprule 检查项 & 结果 \\ \midrule
+重新计算的历史分配数 / 不同输入算例数 & $315/45$ \\
+重新计算总分与历史分数最大绝对差 & $2.22\times10^{-16}$ \\
+总和截断熵与逐项截断熵最大绝对差 & $3.33\times10^{-16}$ \\
+规模、PWL 和二次项数量核对通过的日志数 & $45/45$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+核验机器可读结果保存在随附 \path{mathematical_audit.json}；输入文件哈希保存在 \path{source_hashes.json}。哈希是本次读取文件的内容指纹，其中当前代码的哈希不能当作 9 月 8 日的完整代码快照。
+
+\subsection{用于汇报的准确表述}
+可以表述为：“已经完成固定知识点集合上的教学方法分配建模，将局部效果和偏好、全局分布及多样性软惩罚统一为标量目标，并实现与评分器一致的 Gurobi 离散精确求解参照。对数熵通过完整整数计数断点表达，绝对值与超限正部通过辅助变量处理，平方惩罚保留为二次目标。45 个验证试验均取得求解器容差意义下的最优结果，可用于衡量 PPO 的初步解质量。”
+
+后续如改变权重、画像构造、熵定义或把软阈值改为硬约束，应明确标记为模型修订，并同步修改评分器、环境奖励、基线求解器及精确模型；新结果不应混入本历史口径。若目标仅是改进 PPO 的搜索策略，则保持本模型不变便于进行可比较的性能评估。
+
+\appendix
+\section{公式与代码、数据的对应关系}
+项目根目录为 \path{D:/project/Resource_Allocation}。下列路径均相对此目录；当前代码只用于核对保留的原评分分支，历史状态以保存数据、文档和日志交叉确认。
+\small
+\begin{longtable}{p{.31\textwidth}p{.61\textwidth}}
+\toprule 内容 & 文件与核对重点 \\ \midrule\endfirsthead
+\toprule 内容 & 文件与核对重点 \\ \midrule\endhead
+\bottomrule\endfoot
+算例提取与预计算 & \path{pa_moap_rl/data/build_assignment_instance.py}：选择结果、知识点需求、方法属性与偏好矩阵。\\
+原目标和分项 & \path{pa_moap_rl/utils/scoring.py}：局部平均、分布距离、平滑截断熵与平方惩罚。\\
+精确求解实现 & \path{pa_moap_rl/solvers/gurobi_exact_solver.py}：原权重分支的变量、线性约束、PWL 一般约束、二次目标和初解。\\
+实验执行 & \path{pa_moap_rl/experiments/compare_exact_hybrid.py}：阶段时间预算与 PPO 计时边界。\\
+Gurobi 计时重测 & \path{pa_moap_rl/experiments/remeasure_gurobi_runtime.py}：完整求解函数计时。\\
+历史场景 & \path{data_processed/splits/scenarios/validation_interpolation.json}：画像、目标分布及评分配置。\\
+保存分配与分数 & \path{results/exact_hybrid_validation_pilot/paired_results.jsonl}：315 个历史分配及分项结果。\\
+历史求解日志 & \path{results/exact_hybrid_validation_pilot/gurobi_logs/}：版本、时间、变量和约束数量、目标界及终止状态。\\
+历史实施说明 & \path{docs/exact_hybrid_status_20260908.md}；\path{docs/exact_hybrid_experiment_guide.md}。\\
+历史运行时间摘要 & \path{results/exact_hybrid_validation_pilot/summary_fair_runtime/decision_report.md}。\\
+正确性检查 & \path{tests/test_exact_and_hybrid.py} 及历史保存的测试记录；本文未把当前测试代码整体视为历史快照。\\
+\end{longtable}
+\normalsize
+
+\section{官方求解器语义参考}
+以下资料仅支持接口及数学术语解释；历史实际使用的设置以项目日志为准。R1、R3 为本次访问的在线文档，不能用来反推历史版本的全部默认设置。
+\begin{enumerate}[label={[R\arabic*]}]
+\item Gurobi Optimization, \emph{Constraints}：PWL 一般约束定义、SOS2 相邻非零条件与一般约束处理。\\
+\url{https://docs.gurobi.com/projects/optimizer/en/current/concepts/modeling/constraints.html}
+\item Gurobi Optimization, \emph{Objectives}, Optimizer 12.0：线性、分段线性及二次目标，混合整数二次模型术语。\\
+\url{https://docs.gurobi.com/projects/optimizer/en/12.0/concepts/modeling/objectives.html}
+\item Gurobi Optimization, \emph{Parameter Reference}：MIPGap 与 MIPGapAbs 的终止语义。\\
+\url{https://docs.gurobi.com/projects/optimizer/en/current/reference/parameters.html}
+\end{enumerate}
+\end{document}

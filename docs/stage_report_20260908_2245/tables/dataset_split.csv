@@ -1,0 +1,6 @@
+﻿topology,train,validation,test
+bottleneck,630,135,135
+hourglass,630,135,135
+random,630,135,135
+staircase,630,135,135
+uniform,630,135,135

@@ -1,0 +1,12 @@
+{
+  "audit_date": "2026-10-02",
+  "historical_cutoff": "2026-09-08T22:45:00+08:00",
+  "saved_assignments_recomputed": 315,
+  "instances": 45,
+  "max_J_error": 2.220446049250313e-16,
+  "max_entropy_form_equivalence_error": 3.3306690738754696e-16,
+  "logs_structure_verified": 45,
+  "entropy_smoothing_uniform_bound": 4.5873563056667094e-08,
+  "J_difference_bound_vs_standard_Shannon": 5.04609193623338e-09,
+  "note": "Read-only independent formula reconstruction, no solver rerun."
+}
